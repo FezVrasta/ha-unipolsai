@@ -7,6 +7,7 @@ than a radius.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -14,7 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from pyunipolsai import Position, Quota
+from pyunipolsai import Crash, Position, Quota, UnipolSaiError
 
 
 @pytest.fixture(autouse=True)
@@ -108,3 +109,101 @@ async def test_locate_button_reports_an_exhausted_quota(
         await coordinator.async_force_refresh()
 
     assert mock_client.async_get_position.await_count == calls_before
+
+
+async def test_crash_entities(hass: HomeAssistant) -> None:
+    """The impact entities carry the detection and grade it honestly."""
+    last = hass.states.get("sensor.volkswagen_ab123cd_last_impact")
+    assert last is not None
+    assert last.state == "2026-09-20T06:32:37+00:00"
+    assert last.attributes["max_acceleration"] == 312
+    # Graded by the provider, so validated even though Unipol's own field is 0.
+    assert last.attributes["validated"] is True
+
+    count = hass.states.get("sensor.volkswagen_ab123cd_impacts_on_record")
+    assert count is not None
+    assert count.state == "1"
+    assert count.attributes["validated"] == 1
+
+    assert hass.states.get("event.volkswagen_ab123cd_impact_detected") is not None
+
+
+async def test_crash_event_does_not_replay_on_restart(
+    hass: HomeAssistant, mock_client: AsyncMock, config_entry: MockConfigEntry
+) -> None:
+    """An impact already on record must not fire again on every reload.
+
+    Otherwise every Home Assistant restart re-announces a crash from months
+    ago, which is the kind of notification that gets an integration deleted.
+    """
+    state = hass.states.get("event.volkswagen_ab123cd_impact_detected")
+    assert state is not None
+    assert state.state == "unknown"
+
+    await hass.config_entries.async_reload(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get("event.volkswagen_ab123cd_impact_detected")
+    assert state is not None
+    assert state.state == "unknown"
+
+
+async def test_crash_event_fires_for_a_new_impact(
+    hass: HomeAssistant,
+    mock_client: AsyncMock,
+    config_entry: MockConfigEntry,
+    crash: Crash,
+) -> None:
+    """A previously unseen id fires the event.
+
+    Driven by refreshing the coordinator rather than by winding the clock.
+    What matters here is that a new id reaches the entity and fires, which is
+    this integration's code; whether Home Assistant's own scheduler wakes on
+    time is not.
+    """
+    coordinator = next(iter(config_entry.runtime_data.vehicles.values()))
+    mock_client.async_get_crashes.return_value = [crash, replace(crash, id=4412)]
+
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+
+async def test_crash_endpoint_404_reports_zero(
+    hass: HomeAssistant, mock_client: AsyncMock, config_entry: MockConfigEntry
+) -> None:
+    """A 404 means nothing to report, not a failure.
+
+    The account this was developed against answers 404 on the crash endpoint,
+    and there is no way to tell "no impacts on record" from "this contract has
+    no crash detection". The library flattens it to an empty list, so the
+    entities stay and read zero rather than vanishing: if an impact is ever
+    recorded, it will surface.
+    """
+    mock_client.async_get_crashes.return_value = []
+    await hass.config_entries.async_reload(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    count = hass.states.get("sensor.volkswagen_ab123cd_impacts_on_record")
+    assert count is not None
+    assert count.state == "0"
+    last = hass.states.get("sensor.volkswagen_ab123cd_last_impact")
+    assert last is not None
+    assert last.state == "unknown"
+
+
+async def test_crashes_unavailable_does_not_break_the_poll(
+    hass: HomeAssistant, mock_client: AsyncMock, config_entry: MockConfigEntry
+) -> None:
+    """An account without crash detection keeps its position entities.
+
+    Nothing in vehicleVAS says whether the endpoint will answer, so the only
+    way to find out is to call it and cope.
+    """
+    mock_client.async_get_crashes.side_effect = UnipolSaiError("not available")
+    await hass.config_entries.async_reload(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    tracker = hass.states.get("device_tracker.volkswagen_ab123cd")
+    assert tracker is not None
+    assert tracker.state != "unavailable"
+    assert hass.states.get("sensor.volkswagen_ab123cd_impacts_on_record").state == "0"

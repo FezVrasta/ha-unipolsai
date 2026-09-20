@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from pyunipolsai import (
     ALERT_SERVICES,
+    Crash,
     Notification,
     Position,
     Service,
@@ -41,6 +42,7 @@ class VehicleData:
     position: Position
     services: dict[str, Service]
     notifications: dict[str, list[Notification]] = field(default_factory=dict)
+    crashes: list[Crash] = field(default_factory=list)
 
     def service_active(self, name: str) -> bool:
         """Whether a value-added service is switched on for this contract."""
@@ -51,6 +53,18 @@ class VehicleData:
         """Most recent alert event for one service, if any."""
         events = self.notifications.get(service) or []
         return events[0] if events else None
+
+    @property
+    def latest_crash(self) -> Crash | None:
+        """Most recently detected impact, if any.
+
+        The list is not documented as sorted, so this picks by timestamp
+        rather than trusting the order it arrived in.
+        """
+        dated = [c for c in self.crashes if c.occurred_at]
+        if dated:
+            return max(dated, key=lambda c: c.occurred_at)
+        return self.crashes[0] if self.crashes else None
 
 
 class UnipolSaiUniboxCoordinator(DataUpdateCoordinator[VehicleData]):
@@ -98,6 +112,12 @@ class UnipolSaiUniboxCoordinator(DataUpdateCoordinator[VehicleData]):
                 ),
                 return_exceptions=True,
             )
+            # Tolerated separately: crash detection is not gated by a service
+            # this code can check, so an account without it should lose the
+            # crash entities rather than the whole poll.
+            crashes = await asyncio.gather(
+                self.client.async_get_crashes(self.vehicle), return_exceptions=True
+            )
         except UnipolSaiAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except UnipolSaiError as err:
@@ -113,8 +133,17 @@ class UnipolSaiUniboxCoordinator(DataUpdateCoordinator[VehicleData]):
             else:
                 notifications[name] = result
 
+        if isinstance(crashes[0], BaseException):
+            _LOGGER.debug("Crashes unavailable: %s", crashes[0])
+            detected = self.data.crashes if self.data else []
+        else:
+            detected = crashes[0]
+
         return VehicleData(
-            position=position, services=services, notifications=notifications
+            position=position,
+            services=services,
+            notifications=notifications,
+            crashes=detected,
         )
 
     @property

@@ -23,6 +23,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.unipolsai.const import DOMAIN
 from pyunipolsai import (
+    Crash,
     Notification,
     Position,
     Quota,
@@ -132,12 +133,27 @@ def usage() -> UsageStats:
 
 
 @pytest.fixture
+def crash() -> Crash:
+    """Return one detected impact, graded by the provider."""
+    return Crash(
+        id=4411,
+        occurred_at=datetime(2026, 9, 20, 6, 32, 37, tzinfo=UTC),
+        latitude=45.48,
+        longitude=9.2,
+        speed=47,
+        max_acceleration=312,
+        provider_validation=1,
+    )
+
+
+@pytest.fixture
 def mock_client(
     vehicle: Vehicle,
     position: Position,
     services: dict[str, Service],
     notification: Notification,
     usage: UsageStats,
+    crash: Crash,
 ) -> Generator[AsyncMock]:
     """Patch the client everywhere the integration constructs one."""
     with (
@@ -155,6 +171,8 @@ def mock_client(
         client.async_get_services = AsyncMock(return_value=services)
         client.async_get_notifications = AsyncMock(return_value=[notification])
         client.async_get_usage = AsyncMock(return_value=usage)
+        client.async_get_crashes = AsyncMock(return_value=[crash])
+        client.async_get_crash = AsyncMock(return_value=crash)
         client.async_close = AsyncMock()
         yield client
 

@@ -17,9 +17,14 @@ from .exceptions import (
     UnipolSaiAuthError,
     UnipolSaiConnectionError,
     UnipolSaiError,
+    UnipolSaiNotFoundError,
 )
 from .models import (
     HEADING_DEGREES,
+    Acceleration,
+    Crash,
+    CrashSample,
+    CrashStrength,
     Notification,
     Position,
     Quota,
@@ -30,7 +35,7 @@ from .models import (
     normalise_plate,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "ALERT_SERVICES",
@@ -42,6 +47,10 @@ __all__ = [
     "HEADING_DEGREES",
     "SERVICE_CAR_FINDER",
     "SERVICE_RANGE_STATISTICS",
+    "Acceleration",
+    "Crash",
+    "CrashSample",
+    "CrashStrength",
     "Notification",
     "Position",
     "Quota",
@@ -51,6 +60,7 @@ __all__ = [
     "UnipolSaiClient",
     "UnipolSaiConnectionError",
     "UnipolSaiError",
+    "UnipolSaiNotFoundError",
     "UsageStats",
     "Vehicle",
     "__version__",

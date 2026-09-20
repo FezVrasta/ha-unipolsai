@@ -1,0 +1,20 @@
+{"operationResult": {"type": 0},
+ "id": 4411, "date": 1789885957000, "type": 1, "status": 2,
+ "carAccidentValidation": 0, "octoValidation": 1, "isTriax": 1,
+ "maxAcceleration": 312,
+ "positionLatitude": 45.48, "positionLongitude": 9.2,
+ "positionSpeed": 47, "positionHeading": 135, "positionQuality": 1,
+ "crashStrength": [
+   {"accs": 4, "angle": 37, "alfaX": 120, "alfaY": -44, "alfaZ": 8,
+    "maxAcceleration": 312, "dateMode": "PRE"}],
+ "positions": [
+   {"latitude": 45.4795, "longitude": 9.1995, "speed": 49, "heading": 134,
+    "quality": 1, "date": 1789885956000, "samplingRate": 1, "isClimax": 0,
+    "accelerations": [{"ax": 12, "ay": -4, "az": 1000}]},
+   {"latitude": 45.48, "longitude": 9.2, "speed": 47, "heading": 135,
+    "quality": 1, "date": 1789885957000, "samplingRate": 1, "isClimax": 1,
+    "accelerations": [{"ax": 300, "ay": -120, "az": 980},
+                      {"ax": 312, "ay": -100, "az": 950}]},
+   {"latitude": 45.4805, "longitude": 9.2005, "speed": 0, "heading": 135,
+    "quality": 1, "date": 1789885958000, "samplingRate": 1, "isClimax": 0,
+    "accelerations": []}]}

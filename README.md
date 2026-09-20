@@ -47,6 +47,8 @@ One device per vehicle with an active box.
 | `binary_sensor` Refresh pending, Car Finder | |
 | `event` Engine started | Fires on a new alert, carrying the coordinates the engine was started at |
 | `sensor` Last engine start | Timestamp of that event |
+| `event` Impact detected | Fires when the box reports an impact it has not reported before |
+| `sensor` Last impact, Impacts on record | With the location, speed and peak acceleration as attributes |
 | `button` Locate now | Asks the box for a fresh fix. Unavailable once the daily budget is gone |
 
 Alert entities are created only for services your contract has switched on, so speed-limit, target-area and moved-with-engine-off alerts appear by themselves if you activate them.
@@ -63,7 +65,7 @@ The integration talks to Unipol's API gateway with credentials that ship inside 
 
 - **No live tracking.** The box reports on its own schedule, and forcing a fix is capped at five a day. This is not a real-time tracker and cannot be made into one.
 - **A forced refresh fails quietly when the car is parked.** With the engine off the box does not answer, the position stays where it was, and about five minutes later the attempt gives up. It costs no quota, but it is indistinguishable from a car that has not moved.
-- **Crash events are not exposed yet.** The API has them, including per-sample GPS traces and accelerometer data.
+- **Crash detection is implemented but unproven.** The API exposes impacts, including a per-sample GPS trace and accelerometer readings, and the entities are here. But the endpoint answers 404 on the account this was built against, so the field names come from the app's decompiled models rather than from real data. The impact entities will read zero until that is true for someone. If you have crash data and it parses wrongly, please open an issue.
 - **Home and business Unibox is out of scope.** Cameras, sensors and alarm kits live behind a different API tree, which the current app no longer ships.
 
 ## For contributors

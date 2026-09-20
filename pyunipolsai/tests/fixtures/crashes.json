@@ -1,0 +1,15 @@
+{"operationResult": {"type": 0},
+ "crashes": [
+  {"id": 4411, "date": 1789885957000, "type": 1, "status": 2,
+   "carAccidentValidation": 0, "octoValidation": 1, "isTriax": 1,
+   "maxAcceleration": 312,
+   "positionLatitude": 45.48, "positionLongitude": 9.2,
+   "positionSpeed": 47, "positionHeading": 135, "positionQuality": 1,
+   "sensorOffsetX": 0, "sensorOffsetY": 0, "sensorOffsetZ": 0,
+   "crashDebugInfo": "", "positions": [], "crashStrength": []},
+  {"id": 4412, "date": 1789889311000, "type": 1, "status": 1,
+   "carAccidentValidation": 0, "octoValidation": 0, "isTriax": 0,
+   "maxAcceleration": 88,
+   "positionLatitude": 45.49, "positionLongitude": 9.21,
+   "positionSpeed": 12, "positionHeading": 90, "positionQuality": 2,
+   "positions": [], "crashStrength": []}]}

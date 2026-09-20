@@ -112,6 +112,12 @@
       },
       "last_target_area": {
         "name": "Last target area event"
+      },
+      "last_crash": {
+        "name": "Last impact"
+      },
+      "crash_count": {
+        "name": "Impacts on record"
       }
     },
     "binary_sensor": {
@@ -164,6 +170,16 @@
           "event_type": {
             "state": {
               "target_area": "Target area"
+            }
+          }
+        }
+      },
+      "crash": {
+        "name": "Impact detected",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "crash": "Impact detected"
             }
           }
         }

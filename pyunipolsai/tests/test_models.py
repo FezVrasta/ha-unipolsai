@@ -16,7 +16,16 @@ from pathlib import Path
 import pytest
 from pyunipolsai.models import normalise_plate
 
-from pyunipolsai import Notification, Position, Service, UsageStats, Vehicle
+from pyunipolsai import (
+    Crash,
+    Notification,
+    Position,
+    Service,
+    UnipolSaiError,
+    UnipolSaiNotFoundError,
+    UsageStats,
+    Vehicle,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -188,3 +197,89 @@ class TestUsageStats:
 
     def test_empty_payload(self) -> None:
         assert UsageStats.from_api(None).distance_km() is None
+
+
+class TestCrash:
+    """Crash parsing.
+
+    Unlike every other fixture here, these are built from the app's decompiled
+    models rather than captured traffic: the account this was developed against
+    has no crashes to fetch. The field names are taken from the model's own
+    Moshi annotations, so they are as good as static analysis gets, but the
+    models have already been wrong twice about types. Treat a real payload as
+    the authority and fix these if they disagree.
+    """
+
+    def test_list_parses(self) -> None:
+        crashes = [Crash.from_api(c) for c in load("crashes")["crashes"]]
+        assert [c.id for c in crashes] == [4411, 4412]
+        assert crashes[0].occurred_at == datetime(2026, 9, 20, 6, 32, 37, tzinfo=UTC)
+        assert crashes[0].latitude == 45.48
+        assert crashes[0].speed == 47
+        assert crashes[0].max_acceleration == 312
+
+    def test_list_has_no_reconstruction(self) -> None:
+        """The list endpoint omits the trace; the detail endpoint carries it."""
+        crashes = [Crash.from_api(c) for c in load("crashes")["crashes"]]
+        assert crashes[0].samples == ()
+        assert crashes[0].strengths == ()
+
+    def test_validation_is_not_detection(self) -> None:
+        """An impact the box noticed is not a confirmed accident."""
+        crashes = [Crash.from_api(c) for c in load("crashes")["crashes"]]
+        # graded by the provider
+        assert crashes[0].validated is True
+        # detected, graded by nobody
+        assert crashes[1].validated is False
+
+    def test_detail_carries_the_track(self) -> None:
+        crash = Crash.from_api(load("crash_detail"))
+        assert crash is not None
+        assert len(crash.samples) == 3
+        assert crash.samples[0].speed == 49
+        assert crash.samples[0].timestamp == datetime(
+            2026, 9, 20, 6, 32, 36, tzinfo=UTC
+        )
+        assert len(crash.strengths) == 1
+        assert crash.strengths[0].angle == 37
+        assert crash.strengths[0].date_mode == "PRE"
+
+    def test_climax_is_the_moment_of_impact(self) -> None:
+        crash = Crash.from_api(load("crash_detail"))
+        assert crash is not None
+        climax = crash.climax
+        assert climax is not None
+        assert climax.is_climax is True
+        assert climax.speed == 47
+        # The car is stopped in the sample after it, which is the shape of a
+        # real impact rather than a pothole.
+        assert crash.samples[-1].speed == 0
+
+    def test_accelerations_come_through(self) -> None:
+        crash = Crash.from_api(load("crash_detail"))
+        assert crash is not None
+        climax = crash.climax
+        assert climax is not None
+        assert len(climax.accelerations) == 2
+        assert climax.accelerations[0].x == 300
+        assert climax.accelerations[0].z == 980
+
+    def test_no_climax_when_nothing_is_flagged(self) -> None:
+        crash = Crash.from_api(
+            {"id": 1, "positions": [{"latitude": 1.0, "isClimax": 0}]}
+        )
+        assert crash is not None
+        assert crash.climax is None
+
+    def test_missing_id_yields_nothing(self) -> None:
+        assert Crash.from_api({"date": 1789885957000}) is None
+
+    def test_empty_list_is_normal(self) -> None:
+        """An account with no crashes, which is the usual case."""
+        assert [Crash.from_api(c) for c in {"crashes": []}["crashes"]] == []
+
+
+class TestNotFound:
+    def test_not_found_is_an_unipolsai_error(self) -> None:
+        """So a caller catching the base type still catches it."""
+        assert issubclass(UnipolSaiNotFoundError, UnipolSaiError)

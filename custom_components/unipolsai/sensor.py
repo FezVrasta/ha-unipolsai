@@ -158,6 +158,8 @@ async def async_setup_entry(
         entities.extend(
             UnipolSaiUniboxSensor(coordinator, description) for description in SENSORS
         )
+        entities.append(UnipolSaiUniboxLastCrashSensor(coordinator))
+        entities.append(UnipolSaiUniboxCrashCountSensor(coordinator))
         entities.extend(
             UnipolSaiUniboxLastAlertSensor(coordinator, service, event_type)
             for service, event_type in ALERT_SERVICES.items()
@@ -245,3 +247,60 @@ class UnipolSaiUniboxLastAlertSensor(UnipolSaiUniboxEntity, SensorEntity):
             "longitude": latest.longitude,
             "speed": latest.speed,
         }
+
+
+class UnipolSaiUniboxLastCrashSensor(UnipolSaiUniboxEntity, SensorEntity):
+    """When the box last reported an impact."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_translation_key = "last_crash"
+    _attr_icon = "mdi:car-emergency"
+
+    def __init__(self, coordinator: UnipolSaiUniboxCoordinator) -> None:
+        """Set up the sensor."""
+        super().__init__(coordinator, "last_crash")
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Timestamp of the most recent impact."""
+        crash = self.coordinator.data.latest_crash
+        return crash.occurred_at if crash else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Where it happened and how hard, for the most recent one."""
+        crash = self.coordinator.data.latest_crash
+        if crash is None:
+            return {}
+        return {
+            "crash_id": crash.id,
+            "latitude": crash.latitude,
+            "longitude": crash.longitude,
+            "speed": crash.speed,
+            "max_acceleration": crash.max_acceleration,
+            "validated": crash.validated,
+        }
+
+
+class UnipolSaiUniboxCrashCountSensor(UnipolSaiUniboxEntity, SensorEntity):
+    """How many impacts the box has on record."""
+
+    _attr_translation_key = "crash_count"
+    _attr_icon = "mdi:counter"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: UnipolSaiUniboxCoordinator) -> None:
+        """Set up the sensor."""
+        super().__init__(coordinator, "crash_count")
+
+    @property
+    def native_value(self) -> int:
+        """Number of impacts on record."""
+        return len(self.coordinator.data.crashes)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Split out the ones that were graded as accidents."""
+        crashes = self.coordinator.data.crashes
+        return {"validated": sum(1 for c in crashes if c.validated)}

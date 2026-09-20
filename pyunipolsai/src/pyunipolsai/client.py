@@ -15,8 +15,14 @@ from .const import (
     DEFAULT_TENANT,
     DEFAULT_USER_AGENT,
 )
-from .exceptions import UnipolSaiAuthError, UnipolSaiConnectionError, UnipolSaiError
+from .exceptions import (
+    UnipolSaiAuthError,
+    UnipolSaiConnectionError,
+    UnipolSaiError,
+    UnipolSaiNotFoundError,
+)
 from .models import (
+    Crash,
     Notification,
     Position,
     Service,
@@ -151,6 +157,8 @@ class UnipolSaiClient:
             ) as resp:
                 if resp.status in (401, 403):
                     return resp.status, None
+                if resp.status == 404:
+                    raise UnipolSaiNotFoundError(f"{path}: 404")
                 resp.raise_for_status()
                 return resp.status, await resp.json(content_type=None)
 
@@ -164,6 +172,8 @@ class UnipolSaiClient:
                 status, body = await _do()
                 if status in (401, 403):
                     raise UnipolSaiAuthError(f"still HTTP {status} after re-login")
+        except UnipolSaiNotFoundError:
+            raise
         except aiohttp.ClientError as err:
             raise UnipolSaiConnectionError(f"{path} failed: {err}") from err
 
@@ -251,6 +261,53 @@ class UnipolSaiClient:
             for n in body.get("serviceNotifications") or []
             if n.get("id")
         ]
+
+    async def async_get_crashes(self, vehicle: Vehicle | str) -> list[Crash]:
+        """Impacts the box has detected.
+
+        Returned without the reconstruction: `samples` and `strengths` are
+        empty here. Call `async_get_crash` with an id to fill them in.
+
+        A detection is not a confirmed accident. Check `Crash.validated`
+        before presenting one as though it were.
+
+        Returns an empty list on a 404. The account this was written against
+        answers 404 here rather than returning an empty list, and there is no
+        way to tell from outside whether that means "no impacts on record" or
+        "this contract has no crash detection". Either way there is nothing to
+        report, so it is not treated as an error.
+        """
+        try:
+            body = await self._get(
+                f"api/priv/telematici/auto/v1/vehicles/{self._plate(vehicle)}/crashes",
+                telematics=True,
+            )
+        except UnipolSaiNotFoundError:
+            _LOGGER.debug("No crash record for this vehicle (404)")
+            return []
+        # Logged in full because this is the one shape in the library never
+        # verified against real data. If these fields turn out wrong, this is
+        # the evidence.
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER.debug("crashes raw: %s", body)
+        return [c for raw in body.get("crashes") or [] if (c := Crash.from_api(raw))]
+
+    async def async_get_crash(
+        self, vehicle: Vehicle | str, crash_id: int | str
+    ) -> Crash | None:
+        """One impact in full, including the reconstructed track.
+
+        `samples` is the per-point trace either side of the impact, each point
+        carrying its accelerometer readings, and `Crash.climax` picks out the
+        one the box marks as the moment of impact.
+        """
+        body = await self._get(
+            f"api/priv/telematici/auto/v1/vehicles/"
+            f"{self._plate(vehicle)}/crashes/{crash_id}",
+            telematics=True,
+        )
+        # This endpoint returns the crash at the top level, not wrapped in a list.
+        return Crash.from_api(body)
 
     async def async_get_usage(
         self,

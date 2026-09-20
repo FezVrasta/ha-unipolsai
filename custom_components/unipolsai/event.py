@@ -28,13 +28,20 @@ async def async_setup_entry(
     entry: UnipolSaiUniboxConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up an event entity per activated alert service."""
-    async_add_entities(
+    """Set up an event entity per activated alert service, plus crashes."""
+    entities: list[EventEntity] = [
         UnipolSaiUniboxAlertEvent(coordinator, service, event_type)
         for coordinator in entry.runtime_data.vehicles.values()
         for service, event_type in ALERT_SERVICES.items()
         if coordinator.data.service_active(service)
+    ]
+    # Crash detection is not one of the credit-gated services, so there is no
+    # flag to check: it is created whenever the endpoint answered at all.
+    entities.extend(
+        UnipolSaiUniboxCrashEvent(coordinator)
+        for coordinator in entry.runtime_data.vehicles.values()
     )
+    async_add_entities(entities)
 
 
 class UnipolSaiUniboxAlertEvent(UnipolSaiUniboxEntity, EventEntity):
@@ -89,5 +96,57 @@ class UnipolSaiUniboxAlertEvent(UnipolSaiUniboxEntity, EventEntity):
                 self._event_type,
                 self.coordinator.vehicle.plate,
                 latest.occurred_at,
+            )
+        super()._handle_coordinator_update()
+
+
+class UnipolSaiUniboxCrashEvent(UnipolSaiUniboxEntity, EventEntity):
+    """Fires when the box reports an impact it has not reported before.
+
+    A detection is not a confirmed accident. `validated` says whether either
+    Unipol or the telematics provider has graded it as one, and it is in the
+    event data rather than gating the event, because a detection the provider
+    later dismisses is still something a person would want to know happened.
+    """
+
+    _attr_translation_key = "crash"
+    _attr_event_types = ["crash"]
+    _attr_icon = "mdi:car-emergency"
+
+    def __init__(self, coordinator: UnipolSaiUniboxCoordinator) -> None:
+        """Set up the event entity."""
+        super().__init__(coordinator, "event_crash")
+        self._seen: set[int] = set()
+
+    async def async_added_to_hass(self) -> None:
+        """Seed the seen ids so a restart does not replay old impacts."""
+        await super().async_added_to_hass()
+        self._seen = {c.id for c in self.coordinator.data.crashes}
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        for crash in self.coordinator.data.crashes:
+            if crash.id in self._seen:
+                continue
+            self._seen.add(crash.id)
+            self._trigger_event(
+                "crash",
+                {
+                    "crash_id": crash.id,
+                    "occurred_at": (
+                        crash.occurred_at.isoformat() if crash.occurred_at else None
+                    ),
+                    "latitude": crash.latitude,
+                    "longitude": crash.longitude,
+                    "speed": crash.speed,
+                    "max_acceleration": crash.max_acceleration,
+                    "validated": crash.validated,
+                },
+            )
+            _LOGGER.warning(
+                "Impact reported for %s at %s, validated=%s",
+                self.coordinator.vehicle.plate,
+                crash.occurred_at,
+                crash.validated,
             )
         super()._handle_coordinator_update()

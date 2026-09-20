@@ -34,6 +34,8 @@ asyncio.run(main())
 | `async_get_position(vehicle, force_refresh=True)` | `Position` | **spends daily quota** |
 | `async_get_services(vehicle)` | `dict[str, Service]` | free |
 | `async_get_notifications(vehicle, service)` | `list[Notification]` | free |
+| `async_get_crashes(vehicle)` | `list[Crash]` | free |
+| `async_get_crash(vehicle, id)` | `Crash` with the reconstruction | free |
 | `async_get_usage(vehicle)` | `UsageStats` | free |
 
 ## Things this API does that will surprise you
@@ -51,6 +53,10 @@ The library handles all of these; they're listed so the behaviour isn't mistaken
 **`force_refresh=True` is fire and forget.** It returns immediately with the *old* position and `pending_request` False; the flag goes true a few seconds later and the cycle takes roughly five minutes. It can finish without the position changing, which is what a car parked with the engine off looks like, and that costs no quota. Compare `timestamp` against the value you had before to tell success from give-up.
 
 **`async_get_notifications` returns only the most recent event** despite the plural field name, so two events inside one poll interval collapse into one. The app receives these as push; there is no push path here.
+
+**The crash endpoints are unverified.** Everything else here was checked against live traffic. The crash models come from the app's decompiled source, because the account this was developed against answers HTTP 404 on `crashes` and so has nothing to compare against. `async_get_crashes` flattens that 404 to an empty list, since there is no way to tell "no impacts on record" from "no crash detection on this contract". If you have real crash data and these fields are wrong, please open an issue.
+
+**A crash is a detection, not an accident.** `Crash.validated` is true only when Unipol or the telematics provider has graded it as one. The list endpoint omits the reconstruction; fetch one by id for `samples` and `strengths`, and `Crash.climax` picks out the moment of impact.
 
 **`date_range` is a single letter.** `g` is the whole contract period, `t` is a custom range needing epoch-millisecond `start`/`end`. Word-style values like `LAST_MONTH` are rejected.
 

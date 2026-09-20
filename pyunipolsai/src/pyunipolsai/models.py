@@ -231,6 +231,150 @@ class Notification:
 
 
 @dataclass(frozen=True, slots=True)
+class Acceleration:
+    """One accelerometer sample, in the box's own raw units."""
+
+    x: int | None = None
+    y: int | None = None
+    z: int | None = None
+
+    @classmethod
+    def from_api(cls, data: dict) -> Acceleration:
+        """Build from one `accelerations` entry."""
+        return cls(x=data.get("ax"), y=data.get("ay"), z=data.get("az"))
+
+
+@dataclass(frozen=True, slots=True)
+class CrashSample:
+    """One point on a crash's reconstructed track.
+
+    A crash carries a series of these, sampled either side of the impact, each
+    with the accelerometer readings taken at that point. `is_climax` marks the
+    sample the box considers the moment of impact.
+    """
+
+    latitude: float | None = None
+    longitude: float | None = None
+    speed: int | None = None
+    heading: int | None = None
+    quality: int | None = None
+    timestamp: datetime | None = None
+    sampling_rate: int | None = None
+    is_climax: bool = False
+    accelerations: tuple[Acceleration, ...] = ()
+
+    @classmethod
+    def from_api(cls, data: dict) -> CrashSample:
+        """Build from one `positions` entry on a crash."""
+        return cls(
+            latitude=data.get("latitude"),
+            longitude=data.get("longitude"),
+            speed=data.get("speed"),
+            # An int here, unlike the cardinal letter on a live position.
+            heading=data.get("heading"),
+            quality=data.get("quality"),
+            timestamp=_dt(data.get("date")),
+            sampling_rate=data.get("samplingRate"),
+            is_climax=bool(data.get("isClimax")),
+            accelerations=tuple(
+                Acceleration.from_api(a) for a in data.get("accelerations") or []
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class CrashStrength:
+    """The box's own severity reading for one phase of an impact."""
+
+    accs: int | None = None
+    angle: int | None = None
+    alfa_x: int | None = None
+    alfa_y: int | None = None
+    alfa_z: int | None = None
+    max_acceleration: int | None = None
+    date_mode: str | None = None
+
+    @classmethod
+    def from_api(cls, data: dict) -> CrashStrength:
+        """Build from one `crashStrength` entry."""
+        return cls(
+            accs=data.get("accs"),
+            angle=data.get("angle"),
+            alfa_x=data.get("alfaX"),
+            alfa_y=data.get("alfaY"),
+            alfa_z=data.get("alfaZ"),
+            max_acceleration=data.get("maxAcceleration"),
+            date_mode=data.get("dateMode"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class Crash:
+    """A detected impact.
+
+    The list endpoint returns these without the reconstruction; fetch one by id
+    to get `samples` and `strengths` populated.
+
+    `validated` is the one field worth understanding before showing this to
+    anyone: a detection is not a confirmed accident. The box reports impacts,
+    and the two validation fields are how Unipol's own side grades them.
+    """
+
+    id: int
+    occurred_at: datetime | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    speed: int | None = None
+    heading: int | None = None
+    quality: int | None = None
+    max_acceleration: int | None = None
+    status: int | None = None
+    crash_type: str | None = None
+    accident_validation: int | None = None
+    provider_validation: int | None = None
+    triaxial: bool = False
+    samples: tuple[CrashSample, ...] = ()
+    strengths: tuple[CrashStrength, ...] = ()
+
+    @property
+    def validated(self) -> bool:
+        """Whether either side has graded this as a real accident."""
+        return bool(self.accident_validation) or bool(self.provider_validation)
+
+    @property
+    def climax(self) -> CrashSample | None:
+        """The sample the box marks as the moment of impact."""
+        return next((s for s in self.samples if s.is_climax), None)
+
+    @classmethod
+    def from_api(cls, data: dict) -> Crash | None:
+        """Build from one `crashes` entry, or None without an id."""
+        if data.get("id") is None:
+            return None
+        return cls(
+            id=data["id"],
+            # Declared a String in the app, but every other date in this API is
+            # epoch milliseconds and `_dt` ignores what it cannot use.
+            occurred_at=_dt(data.get("date")),
+            latitude=data.get("positionLatitude"),
+            longitude=data.get("positionLongitude"),
+            speed=data.get("positionSpeed"),
+            heading=data.get("positionHeading"),
+            quality=data.get("positionQuality"),
+            max_acceleration=data.get("maxAcceleration"),
+            status=data.get("status"),
+            crash_type=(str(data["type"]) if data.get("type") is not None else None),
+            accident_validation=data.get("carAccidentValidation"),
+            provider_validation=data.get("octoValidation"),
+            triaxial=bool(data.get("isTriax")),
+            samples=tuple(CrashSample.from_api(p) for p in data.get("positions") or []),
+            strengths=tuple(
+                CrashStrength.from_api(c) for c in data.get("crashStrength") or []
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class UsageStats:
     """Driving statistics.
 

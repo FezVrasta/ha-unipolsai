@@ -80,18 +80,26 @@ commit the *content* and create the *release*; the version follows the tag.
 mechanisms with different tags.
 
 **Order matters.** The integration pins the library exactly and Home Assistant resolves
-that pin from PyPI when the entry sets up. Ship the library first, let it appear on
-PyPI, then bump the pin in `manifest.json`, then release the integration. Releasing them
-the other way round produces installs that fail with "Requirements for unipolsai not
-found" until the library lands.
+that pin from PyPI when the entry sets up. The library has to be on PyPI before the
+integration release that needs it, or installs fail with "Requirements for unipolsai
+not found".
+
+**Bump the library version and the manifest pin in the same commit.** The `pin` job
+compares them, so moving one without the other leaves CI red. This is the one place the
+"never edit a version by hand" rule does not hold: the release workflow will set the
+library version to the same value from the tag, so the two agree and its commit-back is
+a no-op.
 
 ```bash
-# 1. library
-git tag pyunipolsai-v0.2.0 && git push origin pyunipolsai-v0.2.0
-gh run watch                       # build -> publish -> commit the version back
+# 1. one commit: library version + manifest pin, both to the new number
+git commit -am "..." && git push origin main    # CI green, pin job agrees
 
-# 2. integration, once the pin is bumped and CI's `pin` job is green
-gh release create v0.3.0 --title "v0.3.0" --notes-file /tmp/notes.md
+# 2. library to PyPI
+git tag pyunipolsai-v0.2.0 && git push origin pyunipolsai-v0.2.0
+gh run watch                       # build -> publish -> version commit-back
+
+# 3. integration, once the library is visible on PyPI
+gh release create v0.2.0 --title "v0.2.0" --notes-file /tmp/notes.md
 ```
 
 Publishing uses PyPI trusted publishing, so there is no token to rotate. It needs a

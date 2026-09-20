@@ -298,6 +298,43 @@ Reading notifications is a plain read. The credits on an alert service pay for h
 
 **The app gets these as push; there's no push path here.** Polling means an event surfaces up to one poll interval late, and because only the latest is returned, two starts inside one interval collapse into one.
 
+### `crashes`
+
+`GET .../{plate}/crashes` lists detected impacts; `GET .../{plate}/crashes/{crashId}` returns one in full. The list omits the reconstruction, the detail carries it.
+
+**On the account this was developed against, the list endpoint answers HTTP 404.** Not an empty list, a 404. The VAS list has no crash-related service, so this is probably a contract that has no crash detection, but there is no way to tell that from the outside: the same 404 would be a reasonable way for the API to say "no impacts on record". `pyunipolsai` therefore flattens a 404 here to an empty list rather than an error.
+
+**Everything below is from the app's decompiled models, not from captured traffic.** That distinction matters: the models have already been wrong twice, about `date` being a `String` and about `ServiceNotification.luogoName` existing at all. Treat a real payload as the authority.
+
+```jsonc
+{ "crashes": [{
+    "id": 4411,
+    "date": 1789885957000,          // declared String in the app
+    "type": 1, "status": 2,
+    "carAccidentValidation": 0,     // Unipol's grading
+    "octoValidation": 1,            // the telematics provider's grading
+    "isTriax": 1,                   // three-axis sensor
+    "maxAcceleration": 312,
+    "positionLatitude": 45.48, "positionLongitude": 9.2,
+    "positionSpeed": 47, "positionHeading": 135, "positionQuality": 1,
+    "sensorOffsetX": 0, "sensorOffsetY": 0, "sensorOffsetZ": 0,
+    "crashDebugInfo": "",
+    "crashStrength": [{ "accs": 4, "angle": 37,
+                        "alfaX": 120, "alfaY": -44, "alfaZ": 8,
+                        "maxAcceleration": 312, "dateMode": "PRE" }],
+    "positions": [{ "latitude": 45.4795, "longitude": 9.1995,
+                    "speed": 49, "heading": 134, "quality": 1,
+                    "date": 1789885956000, "samplingRate": 1, "isClimax": 0,
+                    "accelerations": [{ "ax": 12, "ay": -4, "az": 1000 }] }]
+  }] }
+```
+
+Three things worth knowing about the shape:
+
+- **`positions` is the reconstruction**, a series of samples either side of the impact, each carrying the accelerometer readings taken at that point. `isClimax` marks the one the box considers the moment of impact. This is the only place in the whole API that exposes a GPS *trace* rather than a single point.
+- **`heading` here is an integer**, unlike the cardinal letter on a live position. The same word means two different things in two endpoints.
+- **A detection is not an accident.** `carAccidentValidation` and `octoValidation` are two separate gradings, by Unipol and by the telematics provider. An impact with both at zero is something the box noticed, nothing more. `Crash.validated` in the library is true when either is set.
+
 ### `vehicleUsages`
 
 A wide statistics record, not a trip list. **Free to poll**: `rangeStatistics` has `serviceRequiredCredits: false` and it doesn't touch `dailyFruitions`.
