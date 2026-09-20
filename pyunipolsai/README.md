@@ -2,7 +2,7 @@
 
 Async Python client for the Unipol (UnipolSai) **Unibox** telematics API: vehicle position, driving statistics, and alert events for the black box fitted under an Italian Unipol motor policy.
 
-Built by reverse engineering the Android app and verifying every call against a live account. The findings behind it are written up in [`docs/FINDINGS.md`](../docs/FINDINGS.md).
+Built by reverse engineering the Android app and verifying every call against a live account. The findings behind it are written up in [`docs/FINDINGS.md`](https://github.com/FezVrasta/ha-unipolsai/blob/main/docs/FINDINGS.md).
 
 ```python
 import asyncio
@@ -66,13 +66,17 @@ UnipolSaiClient(
 )
 ```
 
-[`docs/CAPTURE.md`](../docs/CAPTURE.md) explains how to capture new ones. It needs no account.
+[`docs/CAPTURE.md`](https://github.com/FezVrasta/ha-unipolsai/blob/main/docs/CAPTURE.md) explains how to capture new ones. It needs no account.
 
 ## Install
 
 ```bash
 pip install pyunipolsai
 ```
+
+Developed in the [`ha-unipolsai`](https://github.com/FezVrasta/ha-unipolsai) repository
+alongside the Home Assistant integration that uses it, and released from a
+`pyunipolsai-vX.Y.Z` tag there.
 
 ## Tests
 

@@ -1,7 +1,11 @@
 # Working in this repository
 
-A Home Assistant custom integration, installed through HACS. `custom_components/<domain>/`
-is the whole product; everything else supports it.
+A Home Assistant custom integration, installed through HACS, plus the protocol library
+it runs on. Two products in one repository:
+
+- `custom_components/unipolsai/` — the integration, served by HACS from a `vX.Y.Z` tag.
+- `pyunipolsai/` — a standalone async client published to PyPI from a
+  `pyunipolsai-vX.Y.Z` tag. No Home Assistant imports, its own test suite.
 
 ## Before writing integration code
 
@@ -15,7 +19,15 @@ Other skills: `integration-tests`, `readme-style`, `brand-assets`, `cut-release`
 ## Invariants
 
 - **`manifest.json`'s `version` is set by CI from the release tag.** Never edit it by
-  hand.
+  hand. The same goes for `pyunipolsai`'s version, which `release-library.yml` sets
+  from its own tag.
+- **The library ships before the integration that needs it.** `manifest.json` pins
+  `pyunipolsai` exactly, and Home Assistant resolves that pin from PyPI at setup —
+  checking its own site-packages, not `/config/deps`, so dropping a wheel on the box
+  is not enough. A pin PyPI does not have fails with "Requirements for unipolsai not
+  found", which reads like a broken integration rather than a missing release. The
+  `pin` job in CI fails if the manifest pins a version this repository does not
+  contain.
 - **`strings.json` and `translations/en.json` must be identical.** `strings.json` is the
   source; the copy in `translations/` is what Home Assistant serves. CI diffs them.
 - **Unique IDs are permanent.** Changing one orphans every user's history for that

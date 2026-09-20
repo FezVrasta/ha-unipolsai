@@ -54,6 +54,42 @@ jobs:
             diff -u "$dir/strings.json" "$dir/translations/en.json"
           done
 
+  pin:
+    name: Manifest pin matches the library
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The integration pins pyunipolsai exactly. If the pin names a version
+      # this repository does not contain, HACS installs fail to resolve it at
+      # setup with "Requirements for unipolsai not found" — which looks like a
+      # broken integration rather than a missing release.
+      - run: |
+          python3 - <<'PY'
+          import glob, json, pathlib, re, sys
+
+          (manifest_path,) = glob.glob("custom_components/*/manifest.json")
+          requirements = json.loads(pathlib.Path(manifest_path).read_text())["requirements"]
+          pinned = [r for r in requirements if r.startswith("pyunipolsai")]
+          if not pinned:
+              sys.exit("manifest does not require pyunipolsai")
+          match = re.fullmatch(r"pyunipolsai==(.+)", pinned[0])
+          if not match:
+              sys.exit(f"pin must be exact, got {pinned[0]!r}")
+
+          library = re.search(
+              r'^version = "(.+)"$',
+              pathlib.Path("pyunipolsai/pyproject.toml").read_text(),
+              re.M,
+          ).group(1)
+
+          if match.group(1) != library:
+              sys.exit(
+                  f"manifest pins pyunipolsai=={match.group(1)} but the library in "
+                  f"this repository is {library}. Release the library first."
+              )
+          print(f"pin and library agree on {library}")
+          PY
+
   hassfest:
     name: hassfest
     runs-on: ubuntu-latest

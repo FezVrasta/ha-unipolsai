@@ -1,0 +1,150 @@
+name: Release library
+
+# Two release trains live in this repository and they are deliberately separate:
+#
+#   vX.Y.Z              the Home Assistant integration, served by HACS from the
+#                       tagged commit (see release.yml)
+#   pyunipolsai-vX.Y.Z  the protocol library, published to PyPI
+#
+# The integration pins the library exactly, so the library ships first and the
+# integration release that depends on it follows. The `pin` job in ci.yml fails
+# if the manifest ever pins a version this repository does not contain.
+
+on:
+  push:
+    tags: ["pyunipolsai-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, without the tag prefix (e.g. 0.2.0)"
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Work out the version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#pyunipolsai-v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building pyunipolsai $VERSION"
+
+      # Same rule as manifest.json: the version comes from the tag, never from a
+      # hand edit. Written before the build so the artefact carries it.
+      - name: Set the version from the tag
+        run: |
+          python3 - "${{ steps.version.outputs.version }}" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          version = sys.argv[1]
+          path = pathlib.Path("pyunipolsai/pyproject.toml")
+          text = path.read_text()
+          text, count = re.subn(
+              r'^version = ".*"$', f'version = "{version}"', text, count=1, flags=re.M
+          )
+          if count != 1:
+              sys.exit("could not find a version line in pyunipolsai/pyproject.toml")
+          path.write_text(text)
+          print(f"pyunipolsai/pyproject.toml version -> {version}")
+          PY
+          python3 - "${{ steps.version.outputs.version }}" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          version = sys.argv[1]
+          path = pathlib.Path("pyunipolsai/src/pyunipolsai/__init__.py")
+          text = path.read_text()
+          text, count = re.subn(
+              r'^__version__ = ".*"$', f'__version__ = "{version}"', text,
+              count=1, flags=re.M,
+          )
+          if count != 1:
+              sys.exit("could not find __version__ in pyunipolsai/src/pyunipolsai")
+          path.write_text(text)
+          print(f"__version__ -> {version}")
+          PY
+
+      - name: Build sdist and wheel
+        run: |
+          pip install build twine
+          python -m build pyunipolsai
+          twine check pyunipolsai/dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: pyunipolsai/dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    # Trusted publishing: PyPI verifies this workflow's OIDC token, so there is
+    # no API token to store or rotate. Configure the publisher once at
+    # https://pypi.org/manage/project/pyunipolsai/settings/publishing/ with
+    # owner FezVrasta, repository ha-unipolsai, workflow release-library.yml,
+    # environment pypi.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/pyunipolsai
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  sync:
+    name: Commit the version back
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set the version from the tag
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          sed -i "0,/^version = \".*\"$/s//version = \"$VERSION\"/" \
+            pyunipolsai/pyproject.toml
+          sed -i "0,/^__version__ = \".*\"$/s//__version__ = \"$VERSION\"/" \
+            pyunipolsai/src/pyunipolsai/__init__.py
+
+      - name: Commit if it changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyunipolsai/pyproject.toml pyunipolsai/src/pyunipolsai/__init__.py
+          git diff --staged --quiet || {
+            git commit -m "Set pyunipolsai version to ${{ needs.build.outputs.version }}"
+            git push
+          }

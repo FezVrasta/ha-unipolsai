@@ -74,6 +74,38 @@ commit the *content* and create the *release*; the version follows the tag.
    The manifest should read the new version, committed by `github-actions[bot]`. Then
    `git pull --ff-only` so local main includes that bump.
 
+## Releasing the library
+
+`pyunipolsai` has its own train, because PyPI and HACS are different delivery
+mechanisms with different tags.
+
+**Order matters.** The integration pins the library exactly and Home Assistant resolves
+that pin from PyPI when the entry sets up. Ship the library first, let it appear on
+PyPI, then bump the pin in `manifest.json`, then release the integration. Releasing them
+the other way round produces installs that fail with "Requirements for unipolsai not
+found" until the library lands.
+
+```bash
+# 1. library
+git tag pyunipolsai-v0.2.0 && git push origin pyunipolsai-v0.2.0
+gh run watch                       # build -> publish -> commit the version back
+
+# 2. integration, once the pin is bumped and CI's `pin` job is green
+gh release create v0.3.0 --title "v0.3.0" --notes-file /tmp/notes.md
+```
+
+Publishing uses PyPI trusted publishing, so there is no token to rotate. It needs a
+one-time publisher configured on PyPI for this repository, workflow
+`release-library.yml`, environment `pypi`. Until that exists the `publish` job fails
+with an OIDC error and nothing is uploaded, which is the safe direction.
+
+A version is permanent on PyPI: it cannot be replaced, only yanked. Build locally first
+if in doubt:
+
+```bash
+.venv/bin/python -m build pyunipolsai && .venv/bin/python -m twine check pyunipolsai/dist/*
+```
+
 ## Notes
 
 - Releases go out from `main` directly. No release branch.
