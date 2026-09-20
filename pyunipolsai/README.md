@@ -44,11 +44,11 @@ The library handles all of these; they're listed so the behaviour isn't mistaken
 
 **Plates are country-prefixed** in URLs (`IT-AB123CD`). Pass a `Vehicle` or a bare plate; `normalise_plate` sorts it out.
 
-**Declared types lie.** Dates are declared `String` in the app but sent as epoch milliseconds. Distances are metres, times are seconds. `heading` is a cardinal letter (`"N"`), not degrees. `accuracy` is a small quality grade, *not* a radius, which is why this library calls it `Position.quality` — mapping a `1` onto something like Home Assistant's `gps_accuracy` would claim a one-metre fix.
+**Declared types lie.** Dates are declared `String` in the app but sent as epoch milliseconds. Distances are metres, times are seconds. `heading` is a cardinal letter (`"N"`), not degrees. `accuracy` is a small quality grade, *not* a radius, which is why this library calls it `Position.quality`. Mapping a `1` onto something like Home Assistant's `gps_accuracy` would claim a one-metre fix.
 
 **There are two separate budgets.** `Position.quota` is the daily cap on *forced* refreshes (observed limit: 5). Plain reads never touch it. Separately, `Service.credits_available` is a slower pool that pays for having a service switched on. `rangeStatistics` needs no credits at all, so driving statistics are free to poll.
 
-**`force_refresh=True` is fire and forget.** It returns immediately with the *old* position and `pending_request` False; the flag goes true a few seconds later and the cycle takes roughly five minutes. It can finish without the position changing, which is what a car parked with the engine off looks like — and that costs no quota. Compare `timestamp` against the value you had before to tell success from give-up.
+**`force_refresh=True` is fire and forget.** It returns immediately with the *old* position and `pending_request` False; the flag goes true a few seconds later and the cycle takes roughly five minutes. It can finish without the position changing, which is what a car parked with the engine off looks like, and that costs no quota. Compare `timestamp` against the value you had before to tell success from give-up.
 
 **`async_get_notifications` returns only the most recent event** despite the plural field name, so two events inside one poll interval collapse into one. The app receives these as push; there is no push path here.
 
@@ -87,6 +87,10 @@ pytest
 
 The fixtures are real captured payloads with identifiers replaced.
 
-## Scope
+## Interoperability and European law
 
-This reads an account holder's own data. It breaks no pinning, defeats no authentication, and circumvents no protection. Respect the quota, don't hammer the gateway, and check Unipol's terms before building anything public on it.
+Unipol publishes no API for the Unibox, so the data the box records about a policyholder's own car is reachable only through their app. This library exists to close that gap, and the work behind it relies on exceptions European law provides for precisely this case: Article 5(3) and Article 6 of Directive 2009/24/EC, which permit studying a program and reproducing its code where that is indispensable to make an independently created program interoperate, with Article 8 rendering contrary contract terms null and void. Regulation (EU) 2023/2854, the Data Act, applicable since 12 September 2025, separately obliges the holder of connected-product data to make it available to the user (Articles 4 and 5), and GDPR Articles 15 and 20 cover the personal data in it.
+
+Nothing here defeats authentication or circumvents a technical protection measure. It signs in with the account holder's own credentials, reads that account's own data through the endpoints the app itself uses, and respects the server-side quotas. The full reasoning and the reverse-engineering notes are in the [repository](https://github.com/FezVrasta/ha-unipolsai/blob/main/docs/FINDINGS.md).
+
+Not legal advice.

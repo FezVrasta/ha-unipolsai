@@ -5,7 +5,7 @@ Unibox is, a box bolted to a car that reports where it is. Unipol's red on the s
 gives it some identity without shipping their wordmark, which would not be ours to use.
 
 It is a self-contained tile rather than a bare glyph, which is why there is no
-`dark_icon.png` — it reads the same on either theme.
+`dark_icon.png`. It reads the same on either theme.
 
 Home Assistant serves these. Since **2026.3** a custom integration ships its own brand
 images in a `brand/` folder inside the integration, and Home Assistant exposes them at

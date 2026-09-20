@@ -24,8 +24,8 @@ CONF_CLIENT_ID: Final = "ibm_client_id"
 CONF_CLIENT_SECRET: Final = "ibm_client_secret"
 CONF_TENANT: Final = "tenant"
 
-#: Position and service reads cost nothing — only a forced refresh touches the
-#: daily quota — so this is about how fresh the box's own reports need to be.
+#: Position and service reads cost nothing: only a forced refresh touches the
+#: daily quota. This is really about how fresh the box's own reports need to be.
 SCAN_INTERVAL: Final = timedelta(minutes=5)
 
 #: Driving statistics need no credits either, but only change daily.

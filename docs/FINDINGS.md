@@ -436,6 +436,14 @@ Still open:
 
 ## Legal note
 
-This documents a private API for the purpose of letting an account holder read their own data. That's interoperability, not circumvention: no DRM is broken, no pinning is bypassed, no auth is defeated. Worth keeping it that way. Stay within the documented quota, don't hammer the gateway, and don't publish credentials.
+Unipol publishes no API for the Unibox, so the only route to a policyholder's own telematics data is their app. That is what this work is for, and the basis for it is set out at the bottom of the [README](../README.md): Articles 5(3), 6 and 8 of Directive 2009/24/EC, Articles 4 and 5 of the Data Act, and Articles 15 and 20 of GDPR.
 
-Unipol's terms of service may still say something about automated access. Check before publishing an integration under your name.
+Two things are worth restating here, because this document is the part someone would read before repeating the work.
+
+**Nothing here was circumvented.** The app ships no certificate pinning and its `network_security_config` trusts user certificates, so a plain proxy was enough. No protection measure was defeated, because none was in the way. Authentication was never bypassed either: every call in this document was made with the account holder's own credentials against the account holder's own data.
+
+**Stay inside the quotas.** They are small and server-side, five forced position refreshes a day, and a credit pool per service. Reads are free, so there is no reason to abuse the forced refresh. Hammering the gateway would be both rude and the fastest way to get the whole thing shut off for everyone.
+
+Do not publish captured credentials, tokens or cookies. `docs/CAPTURE.md` is written so a capture never needs to leave the machine it was made on.
+
+Not legal advice.

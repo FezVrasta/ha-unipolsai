@@ -129,7 +129,7 @@ class UnipolSaiUniboxCoordinator(DataUpdateCoordinator[VehicleData]):
         position, the pending flag goes true a few seconds later, and the
         whole thing settles after about five minutes. It can settle without
         the position changing, which is what a car parked with the engine off
-        looks like — and that costs no quota. So success is "the timestamp
+        looks like, and that costs no quota. So success is "the timestamp
         moved", not "the flag cleared".
         """
         if self._refreshing:
