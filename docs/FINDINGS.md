@@ -209,6 +209,25 @@ Four corrections to what the decompiled models implied:
 
 `timeZone: 0` and `daylightSavingTime: 0` alongside a plausible local timestamp suggest `date` is UTC, but that isn't proven. Check it against a known movement before relying on it.
 
+### Forcing a refresh: measured behaviour
+
+One `update=true` against a car parked with the engine off, polled every ~11s:
+
+```
+t+0s     update=true -> HTTP 200, pendingRequest=FALSE, position unchanged
+t+13s    pendingRequest=true
+...      stays true for ~5 minutes
+t+312s   pendingRequest=false, position still unchanged
+```
+
+Three things follow, and they shape the integration more than anything else:
+
+- **The `update=true` response is not the result.** It returns 200 with `pendingRequest: false` and the *old* position. The flag only goes true a few seconds later. A client that reads the immediate response and stops will always think nothing happened. Fire the request, then poll.
+- **The cycle takes about five minutes**, and `pendingRequest` returning to `false` does not mean success. Here it timed out with the position unchanged, because a parked box with the engine off never answers. Compare `date` against the pre-request value to tell success from give-up. Poll every 30s or so and time out around 6 minutes.
+- **A failed refresh costs nothing.** `dailyFruitions` stayed `0/5` and `carFinder` credits stayed at 9 across the whole cycle. Quota appears to be charged on a delivered fix, not on asking. Good news for a retry policy, though it means a user can sit there hammering the button against a sleeping box and never learn why.
+
+What a *successful* refresh costs, and whether it's faster when the engine is on, is still unmeasured.
+
 ### The two quotas
 
 There are **two independent budgets**, which is the single most important thing for the polling design.
@@ -371,11 +390,13 @@ Settled by the live session:
 - ~~Login OTP on a new device.~~ None was triggered on a fresh install and fresh emulator.
 - ~~`vehicleUsages` `dateRange` vocabulary.~~ `g` and `t` only, and the units are metres and seconds.
 
+- ~~The `pendingRequest` cycle.~~ Measured, see below.
+- ~~Whether a forced refresh spends a unit.~~ A *failed* one spends nothing.
+
 Still open:
 
-1. **The `pendingRequest` cycle.** Never observed as `true`, because no forced refresh has been made yet. How long a forced fix takes to land, and the right poll cadence while waiting, are unknown.
-2. **Whether a forced refresh spends a `dailyFruitions` unit, a `serviceAvailableCredits` unit, or both.** The two counters were 0/5 and 9/10 respectively at rest.
-3. Whether the gateway rejects a non-app `User-Agent`. The verified call impersonated the app. `tools/probe.py` sends an honest one by default, so this needs one comparison run.
+1. What a **successful** forced refresh costs, and how long it takes. Only a failed one (engine off) has been measured. Needs a retry while the car is actually running.
+2. Whether the gateway rejects a non-app `User-Agent`. The verified call impersonated the app. `tools/probe.py` sends an honest one by default, so this needs one comparison run.
 4. Whether `heading` uses 8-point (`"NE"`) or 16-point (`"NNE"`) cardinals. Only `"N"` observed.
 5. How long the F5 session lasts, and whether `login/refresh` renews the cookies or only the JWT. This decides how often the integration must fully re-login.
 7. Rate limits on the non-telematics endpoints.
