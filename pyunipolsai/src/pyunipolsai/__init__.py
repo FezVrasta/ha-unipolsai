@@ -30,7 +30,7 @@ from .models import (
     normalise_plate,
 )
 
-__version__ = "0.1.0"
+__version__ = ""
 
 __all__ = [
     "ALERT_SERVICES",
