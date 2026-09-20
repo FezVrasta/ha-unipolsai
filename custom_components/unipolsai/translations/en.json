@@ -1,0 +1,56 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "UnipolSai Unibox",
+        "description": "Sign in with your Unipol account. The gateway credentials are the app's own; see the integration docs for how to obtain them.",
+        "data": {
+          "username": "Username",
+          "password": "Password",
+          "ibm_client_id": "API client id",
+          "ibm_client_secret": "API client secret",
+          "tenant": "Tenant"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in again",
+        "description": "The Unipol session for {username} expired and could not be renewed.",
+        "data": { "password": "Password" }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the Unipol API.",
+      "invalid_auth": "Username or password rejected.",
+      "no_vehicles": "No vehicle with an active Unibox was found on this account.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This account is already set up.",
+      "reauth_successful": "Signed in again."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "speed": { "name": "Speed" },
+      "heading": { "name": "Heading" },
+      "last_fix": { "name": "Last fix" },
+      "refreshes_used": { "name": "Refreshes used today" },
+      "refreshes_remaining": { "name": "Refreshes remaining today" },
+      "car_finder_credits": { "name": "Car Finder credits" },
+      "total_distance": { "name": "Total distance" },
+      "city_distance": { "name": "City distance" },
+      "extra_urban_distance": { "name": "Extra-urban distance" },
+      "highway_distance": { "name": "Motorway distance" },
+      "total_driving_time": { "name": "Total driving time" },
+      "top_province": { "name": "Most driven province" },
+      "top_province_share": { "name": "Most driven province share" }
+    },
+    "binary_sensor": {
+      "refresh_pending": { "name": "Refresh pending" },
+      "car_finder_active": { "name": "Car Finder" }
+    },
+    "button": {
+      "force_refresh": { "name": "Locate now" }
+    }
+  }
+}

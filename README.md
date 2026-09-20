@@ -2,13 +2,14 @@
 
 Groundwork for a Home Assistant integration that reads Unibox telematics data (GPS position, driving stats, crash events) out of the Unipol Assicurazioni account API.
 
-Right now this is research, not an integration. No `custom_components/` yet.
+Ships a working `custom_components/unipolsai` plus the research it came from.
 
 ## What's here
 
 - [`docs/FINDINGS.md`](docs/FINDINGS.md) — the reverse engineering writeup. API base URL, auth flow, required headers, the telematics endpoints, response models, and the integration design that falls out of them. Start here.
 - [`docs/endpoints.txt`](docs/endpoints.txt) — all 312 endpoint path templates extracted from the dex.
 - [`docs/CAPTURE.md`](docs/CAPTURE.md) — how to capture live traffic to fill the remaining gaps.
+- `custom_components/unipolsai/` — the integration.
 - `tools/` — emulator capture scripts and a standalone API probe.
 - `apk/`, `decompiled/`, `captures/` — gitignored working directories.
 
@@ -84,3 +85,24 @@ set -a; source .env.local; set +a
 ## Scope
 
 This reads an account holder's own data. It doesn't break pinning, defeat auth, or circumvent any protection. Keep it that way: respect the quota, don't hammer the gateway, and check Unipol's terms before publishing anything under your name.
+
+## Installing
+
+Copy `custom_components/unipolsai` into your HA config directory and restart, then add **UnipolSai Unibox** from Settings → Devices & services.
+
+The config flow asks for your Unipol username and password, plus the three gateway values (`x-ibm-client-id`, `x-ibm-client-secret`, `x-unipol-tenant`). Those are the app's own API Connect credentials and are not hardcoded, because Unipol can rotate them; [`docs/CAPTURE.md`](docs/CAPTURE.md) explains how to capture them, and it needs no account.
+
+### Entities, per vehicle
+
+| Entity | Notes |
+|---|---|
+| `device_tracker` | last known position. No `gps_accuracy`: the API's `accuracy` is a quality grade, not metres |
+| `sensor` speed, heading, last fix | heading is a cardinal letter, so it's a text sensor |
+| `sensor` refreshes used / remaining today | the 5-a-day forced-refresh budget |
+| `sensor` Car Finder credits | the separate, slower service-credit pool |
+| `sensor` total / city / extra-urban / motorway distance, driving time | from `vehicleUsages`, free to poll |
+| `sensor` most driven province and its share | |
+| `binary_sensor` refresh pending, Car Finder active | |
+| `button` Locate now | forces a fresh fix; unavailable once the daily budget is gone |
+
+Position and statistics polling are free, so they run on a normal interval. **Locate now** is the only thing that spends quota, which is why it's a button and not automatic. Pressing it fires the request and then waits out the roughly five-minute cycle; if the car is parked with the engine off the box will not answer and the position stays unchanged, which costs nothing.
