@@ -250,7 +250,29 @@ class UnipolSaiUniboxOptionsFlow(OptionsFlow):
             if error:
                 errors["base"] = error
             else:
-                return self.async_create_entry(data=user_input)
+                # Same rule as the initial flow: persist a value only when it
+                # differs from the shipped default, so a corrected default in a
+                # future release still reaches this entry rather than being
+                # pinned to whatever was current when the form was last opened.
+                return self.async_create_entry(
+                    data={
+                        key: value
+                        for key, value, default in (
+                            (
+                                CONF_CLIENT_ID,
+                                user_input[CONF_CLIENT_ID],
+                                DEFAULT_CLIENT_ID,
+                            ),
+                            (
+                                CONF_CLIENT_SECRET,
+                                user_input[CONF_CLIENT_SECRET],
+                                DEFAULT_CLIENT_SECRET,
+                            ),
+                            (CONF_TENANT, user_input[CONF_TENANT], DEFAULT_TENANT),
+                        )
+                        if value != default
+                    }
+                )
 
         return self.async_show_form(
             step_id="init",

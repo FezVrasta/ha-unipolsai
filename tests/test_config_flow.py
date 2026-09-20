@@ -17,7 +17,13 @@ from custom_components.unipolsai.const import (
     CONF_TENANT,
     DOMAIN,
 )
-from pyunipolsai import UnipolSaiAuthError, UnipolSaiError
+from pyunipolsai import (
+    DEFAULT_CLIENT_ID,
+    DEFAULT_CLIENT_SECRET,
+    DEFAULT_TENANT,
+    UnipolSaiAuthError,
+    UnipolSaiError,
+)
 
 CREDENTIALS = {CONF_USERNAME: "someone@example.com", CONF_PASSWORD: "hunter2"}
 
@@ -147,3 +153,25 @@ async def test_options_flow_overrides_gateway_credentials(
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert config_entry.options[CONF_CLIENT_ID] == "new-id"
+
+
+async def test_options_flow_keeps_defaults_unpinned(
+    hass: HomeAssistant, mock_client: AsyncMock, config_entry: MockConfigEntry
+) -> None:
+    """Submitting the form unchanged must not pin the entry to today's defaults."""
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_CLIENT_ID: DEFAULT_CLIENT_ID,
+            CONF_CLIENT_SECRET: DEFAULT_CLIENT_SECRET,
+            CONF_TENANT: DEFAULT_TENANT,
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    # Nothing stored, so a corrected default in a later release still applies.
+    assert config_entry.options == {}
