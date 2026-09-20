@@ -21,7 +21,7 @@ Do not start by deleting things.
 scripts/bootstrap --domain growatt_datalogger --name "Growatt Datalogger"
 ```
 
-This renames `unipolsai` everywhere, rewrites `UnipolSaiUnibox*` class names from the
+This renames `example_integration` everywhere, rewrites `Example*` class names from the
 display name, points the manifest and badges at the `origin` remote, moves the component
 directory, replaces the template's README with a skeleton, and deletes itself. Run it
 **once**, before writing any code — it is a blunt string replacement and will happily
@@ -46,7 +46,8 @@ every 30 seconds is the kind of thing reviewers and users both notice.
 
 Also: `requirements` must pin exactly (`foo==1.2.3`), never a range — Home Assistant
 installs what the manifest says, and a floating pin means two users run different code.
-Leave `version` at whatever it is; the release workflow sets it from the tag.
+Leave `version` at whatever it is. `scripts/bump-version` sets it as part of cutting
+a release, and CI fails the release if the tag and the manifest disagree.
 
 ## 3. Replace the scaffold, in this order
 

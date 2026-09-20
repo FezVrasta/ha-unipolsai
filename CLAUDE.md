@@ -18,9 +18,12 @@ Other skills: `integration-tests`, `readme-style`, `brand-assets`, `cut-release`
 
 ## Invariants
 
-- **`manifest.json`'s `version` is set by CI from the release tag.** Never edit it by
-  hand. The same goes for `pyunipolsai`'s version, which `release-library.yml` sets
-  from its own tag.
+- **`manifest.json`'s `version` belongs to the release commit.** Set it with
+  `scripts/bump-version X.Y.Z`, which writes and commits it, *before* creating the
+  release. HACS serves the tagged tree, so a version applied after the tag exists is a
+  version nobody installs. CI checks the two agree and fails the release if they do not.
+  `pyunipolsai`'s version moves in the same commit as the manifest pin, for the reason
+  below.
 - **The library ships before the integration that needs it.** `manifest.json` pins
   `pyunipolsai` exactly, and Home Assistant resolves that pin from PyPI at setup —
   checking its own site-packages, not `/config/deps`, so dropping a wheel on the box

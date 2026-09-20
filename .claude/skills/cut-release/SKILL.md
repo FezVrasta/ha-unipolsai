@@ -9,17 +9,23 @@ description: >-
 
 # Cutting a release
 
-A release is a GitHub release with a `vX.Y.Z` tag. Publishing it triggers
-`.github/workflows/release.yml`, which sets `manifest.json`'s version from the tag and
-commits it as `github-actions[bot]`. That is the whole delivery mechanism — HACS serves
-the tagged commit.
+A release is a GitHub release with a `vX.Y.Z` tag. HACS serves the tagged tree, so the
+tag is the whole delivery mechanism, and whatever `manifest.json` says inside that tag is
+what every installation reports.
 
 ## The one thing that trips people up
 
-**Do not edit `manifest.json`'s `version` yourself.** The release workflow does it from
-the tag name (`v0.13.0` → `0.13.0`) and pushes a `Set version to vX.Y.Z` commit
-afterwards. Bumping it by hand gives you a duplicate, conflicting change. Your job is to
-commit the *content* and create the *release*; the version follows the tag.
+**The version has to be committed before the tag, not after.** `scripts/bump-version
+0.13.0` writes `manifest.json` and commits it; push that, then create the release. Do it
+the other way round and the tag contains the previous version: the release page says
+v0.13.0 while everyone who installs it sees 0.12.0.
+
+This is what `release.yml` used to get wrong. It now only *checks* that the tagged
+manifest matches the tag, and fails the release if it does not.
+
+Do not hand-edit the version either. `scripts/bump-version` refuses on a dirty tree, on
+a tag that already exists, and on a version that is already set, all of which are
+mistakes worth catching before a tag is permanent.
 
 ## Version scheme
 
@@ -50,7 +56,15 @@ commit the *content* and create the *release*; the version follows the tag.
    is actually being served — `grep` the deployed file for a string only your change
    contains — before believing any UI result. This has burned whole debugging sessions.
 
-3. **Commit the content.** One commit per logical change, present-tense summary line, and
+3. **Bump the version.**
+   ```bash
+   scripts/bump-version 0.13.0
+   git push origin main
+   ```
+   Nothing else should be uncommitted when you do this: the tag should point at the
+   tree you tested.
+
+4. **Commit the content.** One commit per logical change, present-tense summary line, and
    a body that says *why*. Match the surrounding `git log`, which is discursive and
    explains reasoning rather than restating the diff. End every commit with the trailer:
    ```
@@ -58,7 +72,8 @@ commit the *content* and create the *release*; the version follows the tag.
    ```
    Then `git push origin main`.
 
-4. **Create the release.** Write notes to a file and:
+5. **Create the release.** `gh release create` tags `HEAD`, which is now the version
+   commit. Write notes to a file and:
    ```bash
    gh release create vX.Y.Z --title "vX.Y.Z" --notes-file /tmp/release-X.Y.Z.md
    ```
@@ -66,13 +81,14 @@ commit the *content* and create the *release*; the version follows the tag.
    ("Fix", "New", …), and — while the project is pre-1.0 — close with a standing line
    saying so. Read the previous release for the voice: `gh release view <lasttag>`.
 
-5. **Verify it landed.**
+6. **Verify it landed.**
    ```bash
    gh run list -L 5   # the "Release" run should be success
-   git fetch origin main && git show origin/main:custom_components/*/manifest.json | grep version
+   git show vX.Y.Z:custom_components/*/manifest.json | grep version
    ```
-   The manifest should read the new version, committed by `github-actions[bot]`. Then
-   `git pull --ff-only` so local main includes that bump.
+   The version inside the *tag* is the one that matters. If the Release run failed, the
+   two disagree: the release is out with the wrong version, so bump, push, and cut a
+   patch release rather than moving the tag, which people may already have fetched.
 
 ## Releasing the library
 
