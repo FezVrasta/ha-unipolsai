@@ -18,8 +18,8 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: pip install ruff
@@ -32,8 +32,8 @@ jobs:
     name: Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -45,7 +45,7 @@ jobs:
     name: Translations match strings.json
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # translations/en.json is what Home Assistant actually serves; strings.json is
       # only the source hassfest validates. Letting them drift ships a config flow whose
       # labels are stale, and nothing else catches it.
@@ -58,7 +58,7 @@ jobs:
     name: Manifest pin matches the library
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The integration pins pyunipolsai exactly. If the pin names a version
       # this repository does not contain, HACS installs fail to resolve it at
       # setup with "Requirements for unipolsai not found" — which looks like a
@@ -76,11 +76,20 @@ jobs:
           if not match:
               sys.exit(f"pin must be exact, got {pinned[0]!r}")
 
-          library = re.search(
-              r'^version = "(.+)"$',
+          # Not .group(1) straight off a search: a blank or malformed version
+          # here used to surface as an AttributeError traceback, which says
+          # nothing about what is wrong.
+          found = re.search(
+              r'^version = "(.*)"$',
               pathlib.Path("pyunipolsai/pyproject.toml").read_text(),
               re.M,
-          ).group(1)
+          )
+          if not found or not found.group(1):
+              sys.exit(
+                  "pyunipolsai/pyproject.toml has no usable version. The release "
+                  "workflow sets it from the tag; a blank one means that went wrong."
+              )
+          library = found.group(1)
 
           if match.group(1) != library:
               sys.exit(
@@ -94,14 +103,14 @@ jobs:
     name: hassfest
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: home-assistant/actions/hassfest@master
 
   hacs:
     name: HACS
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: hacs/action@main
         with:
           category: integration
