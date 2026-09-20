@@ -66,11 +66,8 @@ mistakes worth catching before a tag is permanent.
 
 4. **Commit the content.** One commit per logical change, present-tense summary line, and
    a body that says *why*. Match the surrounding `git log`, which is discursive and
-   explains reasoning rather than restating the diff. End every commit with the trailer:
-   ```
-   Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-   ```
-   Then `git push origin main`.
+   explains reasoning rather than restating the diff. No attribution trailers: the commit
+   is yours, so write it the way you write the rest of them. Then `git push origin main`.
 
 5. **Create the release.** `gh release create` tags `HEAD`, which is now the version
    commit. Write notes to a file and:
