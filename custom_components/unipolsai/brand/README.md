@@ -1,8 +1,11 @@
 # Brand assets
 
-> **The icon here is a placeholder — replace it before the first release.** It ships
-> because the HACS CI job fails outright on a missing `icon.png`, and a new repository
-> should not start red. It is a generic chip glyph; it says nothing about your device.
+The icon is a car with a signal fanning out above it, on a deep navy squircle: what the
+Unibox is, a box bolted to a car that reports where it is. Unipol's red on the signal
+gives it some identity without shipping their wordmark, which would not be ours to use.
+
+It is a self-contained tile rather than a bare glyph, which is why there is no
+`dark_icon.png` — it reads the same on either theme.
 
 Home Assistant serves these. Since **2026.3** a custom integration ships its own brand
 images in a `brand/` folder inside the integration, and Home Assistant exposes them at
