@@ -1,8 +1,8 @@
 # Unipol Assicurazioni Android app: reverse engineering notes
 
-Static analysis of the Android app, done to work out whether a Home Assistant integration can read the Unibox telematics GPS position and driving data.
+Working out whether a Home Assistant integration can read the Unibox telematics GPS position and driving data. Static analysis of the app, plus a verified live session against a real account with an active box.
 
-Short answer: yes. There's a clean REST API behind a JWT, and `lastPosition` returns exactly what a `device_tracker` needs. The catch is a server-side daily quota on position refreshes.
+Short answer: yes, and it's confirmed working end to end. `lastPosition` returns exactly what a `device_tracker` needs. Two things aren't obvious from the code: auth needs the login cookie jar and not just the JWT, and reading the position is free while *forcing* a fresh fix is capped at 5 a day.
 
 ## The binary
 
@@ -107,21 +107,53 @@ It doesn't need to be. **The app fetches the APIC config at cold start, before a
 
 Captured that way on 2026-09-20 and written to `.env.local` (gitignored, values deliberately not in this file). They're app-wide, not per-user: the same triple works for any account, and Unipol can rotate them whenever they like. Treat them as configuration with an expiry date, not as a constant.
 
-The fallback, if the config call ever stops going over the wire, is SharedPreferences after the app has run once:
+The fallback, if the config call ever stops going over the wire, is SharedPreferences after the app has run once. The real file is `UNIPOLSAI.xml`, not `UniPicUpPref.xml` as the constant name suggested:
 
 ```bash
-adb shell run-as com.UnipolSaiApp cat \
-  /data/data/com.UnipolSaiApp/shared_prefs/UniPicUpPref.xml | grep -i 'ibm\|tenant'
+adb shell cat /data/data/com.UnipolSaiApp/shared_prefs/UNIPOLSAI.xml | grep -i 'ibm\|tenant'
 ```
+
+### The bearer token is not sufficient on its own
+
+This is the thing static analysis completely missed, and it invalidates the obvious "just replay the JWT" approach.
+
+Replaying a valid `Authorization: Bearer` with the full documented header set returns:
+
+```
+HTTP 403  {"errorCode":403003,"errorMessage":"No credential"}
+```
+
+which is exactly the code the interceptor treats as a re-auth trigger. **There is a stateful session layer in front of the JWT.** A working request also carries:
+
+```
+Cookie: MRHSession=...; LastMRH_Session=...; JSESSIONID=...; TS0179686b=...; TS01ccf0d6=...; TS66e4e8f9027=...
+```
+
+`MRHSession` is F5 BIG-IP Access Policy Manager and the `TS*` cookies are F5 ASM. They're established during `POST /hub/login` and must be carried on every subsequent call. Any client therefore needs a cookie-persisting session and must perform a real login. A stored long-lived token is not a workable auth model here.
+
+### Two extra headers on telematics calls
+
+The `@HeaderMap Map<String, String>` parameter on every `TelematicsAutoService` method, which the decompile left unresolved, carries:
+
+```
+service_type: Vehicle
+company_id: unipolsai
+```
+
+Both are required. Without them the telematics endpoints do not behave. They're lowercase with underscores, unlike every other custom header in the app.
+
+A minimal working request is the six standard headers, plus these two, plus `accept: application/json`, plus the login cookie jar. `x-unipol-firebase-config` and `x-unipol-glassbox-session-id` were sent in the verified call but are probably optional, since they're analytics plumbing.
 
 ## Telematics endpoints
 
-All from `com.UnipolSaiApp.newapp.network.services.TelematicsAutoService`. `{plate}` is the vehicle plate, uppercase, no spaces.
+All from `com.UnipolSaiApp.newapp.network.services.TelematicsAutoService`.
+
+**`{plate}` is country-prefixed**: `IT-AB123CD`, not `AB123CD`. A bare plate does not work. The prefix is not visible anywhere in the decompiled code or in the app UI, which shows the plate unprefixed.
 
 | Method | Path (relative to `/hub/`) | Returns |
 |---|---|---|
 | GET | `api/priv/telematici/contratti/v1/contracts/myTelematicContracts` | the vehicles you have a box on |
-| GET | `api/priv/telematici/auto/v1/vehicles/{plate}/lastPosition?update={bool}` | **GPS position** |
+| GET | `api/priv/telematici/auto/v1/vehicles/{plate}/lastPosition?update={bool}` | **GPS position**, `update` required |
 | GET | `api/priv/telematici/auto/v1/vehicles/{plate}/vehicleUsages?dateRange=` | driving stats |
 | GET | `api/priv/telematici/auto/v1/vehicles/{plate}/crashes` | crash events |
 | GET | `api/priv/telematici/auto/v1/vehicles/{plate}/crashes/{crashId}` | one crash |
@@ -146,42 +178,115 @@ Also useful outside the telematics tree:
 
 ### `lastPosition`
 
+Real observed response, `GET .../IT-AB123CD/lastPosition?update=false`:
+
 ```jsonc
 {
+  "operationResult": { "type": 0 },
   "lastPosition": {
-    "lat": 44.4949,
-    "lon": 11.3426,
-    "speed": 0,                 // int
-    "heading": "0",             // STRING here, int elsewhere
-    "accuracy": 0,              // int, units unconfirmed
-    "date": "...",              // string, format unconfirmed
-    "timeZone": 1,
-    "daylightSavingTime": 1,
-    "pendingRequest": false,    // see below
-    "dailyFruitions": { "current": 3, "max": 10 }
+    "date": 1789889311000,      // epoch MILLISECONDS, not a string
+    "lat": 45.464200,
+    "lon": 9.1900,
+    "speed": 0,                 // int, km/h
+    "heading": "N",             // CARDINAL letter, not degrees
+    "timeZone": 0,
+    "daylightSavingTime": 0,
+    "accuracy": 1,              // small int grade, not metres
+    "pendingRequest": false,
+    "dailyFruitions": { "current": 0, "max": 5 }
   }
 }
 ```
 
-Two things drive the integration design:
+**`update` is a required query parameter.** Omitting it returns HTTP 400 with an empty body, even though the Retrofit signature types it as a nullable `Boolean`. Always send `update=false` for a plain read.
 
-**`pendingRequest`.** Calling with `?update=true` asks the box to report a fresh fix, which is not instant. The response almost certainly comes back with `pendingRequest: true` and a stale position, and you poll again without `update` until it flips false. Treat `update=true` as "start a refresh", not "give me the position now".
+Four corrections to what the decompiled models implied:
 
-**`dailyFruitions {current, max}`.** A server-side daily quota on forced refreshes. This is the single most important constraint. A naive 30-second poll with `update=true` will burn the day's allowance in minutes and probably annoy Unipol. The integration must read `max`, track `current`, and budget.
+- **`date` is an epoch-millisecond integer.** The Kotlin field is `private String date`, but the wire sends a number. Don't trust the declared type.
+- **`heading` is a cardinal letter** (`"N"`, presumably `"NE"`, `"S"` and so on), not a bearing in degrees. An HA integration wanting degrees has to map it, and loses resolution doing so.
+- **`accuracy` is a small integer grade**, not a radius in metres. Observed `1`. Do not feed it to `gps_accuracy` as if it were metres, that would tell HA the fix is accurate to 1 m.
+- **Every telematics response is wrapped in `operationResult`.** `type: 0` is success. Unwrap before parsing.
 
-Field names are transcribed from the Moshi `@Json(name=)` annotations, so they're accurate. Values above are illustrative, not observed. The exact `date` format and `accuracy` units need a live capture to confirm.
+`timeZone: 0` and `daylightSavingTime: 0` alongside a plausible local timestamp suggest `date` is UTC, but that isn't proven. Check it against a known movement before relying on it.
+
+### The two quotas
+
+There are **two independent budgets**, which is the single most important thing for the polling design.
+
+**`dailyFruitions {current, max}`: observed `max` of 5.** Five forced position refreshes a day. `current` was `0` after several `update=false` reads, so **plain reads are free** and only `update=true` counts. That's the key fact: an HA integration can poll `lastPosition?update=false` as often as it likes and will simply see a stale fix until the car next reports on its own.
+
+**`serviceAvailableCredits` / `serviceCreditUsed` on `vehicleVAS`: a separate, longer-lived pool.** Observed 9 available and 1 used for `carFinder`, out of an apparent 10. `rechargeOwnership: "Unipol"` suggests Unipol refills it. Whether a forced refresh spends a daily fruition, a service credit, or both is still unverified.
+
+So the design is: poll `update=false` freely on a normal interval, and expose `update=true` as an explicit button or service that refuses when `current >= max`.
+
+### `vehicleVAS`
+
+```jsonc
+{
+  "operationResult": { "type": 0 },
+  "vehicleVAS": [
+    { "serviceName": "carFinder", "isServiceEnabled": true, "isServiceActivated": true,
+      "serviceRequiredCredits": true, "serviceAvailableCredits": 9,
+      "serviceCreditUsed": 1, "rechargeOwnership": "Unipol" }
+    // ...
+  ]
+}
+```
+
+The six `serviceName` values, which are the `{serviceName}` path segment elsewhere in the API:
+
+| `serviceName` | UI label | Needs credits |
+|---|---|---|
+| `carFinder` | CAR FINDER | yes |
+| `speedLimit` | SPEED LIMIT | yes |
+| `targetArea` | TARGET AREA | yes |
+| `engineOn` | ALERT ACCENSIONE | yes |
+| `carMovedEngineOff` | ALERT SPOSTAMENTO | yes |
+| `rangeStatistics` | PERCORRENZE | **no** |
+
+`rangeStatistics` has `serviceRequiredCredits: false`, so the driving statistics behind `vehicleUsages` are **free to poll**. Check `isServiceActivated` before creating entities: a position sensor is meaningless if `carFinder` is off.
 
 ### `vehicleUsages`
 
-A wide statistics record, not a trip list. Distances and times broken down by:
+A wide statistics record, not a trip list. **Free to poll**: `rangeStatistics` has `serviceRequiredCredits: false` and it doesn't touch `dailyFruitions`.
 
-- road type: `cityDriving*`, `extraUrbanDriving*`, `highwayDriving*`, `otherDriving*`
-- day of week: `mondayDriving*` through `sundayDriving*`
-- daylight vs night: `daylightDriving*`
-- top province: `higherMileageProvince`, `higherMileageProvinceFullName`, `higherMileageProvinceDrivingPerc`, `higherMileageProvinceTimePerc`
-- window: `fromDate`, `statisticsDate` (epoch millis)
+**`dateRange` is a single letter, and only two are valid.** Not the `LAST_MONTH`-style enum the Retrofit signature suggests. Anything else returns `400100 "dateRange fornito non è corretto"`.
 
-Each `*Distance` / `*Time` pair is an int. Good material for long-term-statistics sensors, not for live state.
+| Value | Meaning | Extra params |
+|---|---|---|
+| `g` | the whole contract period | none |
+| `t` | custom range | `startDate` and `endDate`, **epoch millis**, required |
+
+ISO dates on `t` return HTTP 500. With `g`, `fromDate` comes back equal to the contract's `dataInizio`, so `g` really is "everything since the policy started", not "today".
+
+Real response for `dateRange=g` over 91 days:
+
+```jsonc
+{
+  "operationResult": { "type": 0 },
+  "vehicleUsages": [{
+    "statisticsDate": 1789689600000, "fromDate": 1781913600000, "toDate": 1789689600000,
+    "totalDistance": 5431730,          // METRES
+    "totalDrivingTime": 420215,        // SECONDS
+    "daylightDrivingDistance": 5395460, "daylightDrivingTime": 417010,
+    "cityDrivingDistance": 1378360, "extraUrbanDrivingDistance": 1667250,
+    "highwayDrivingDistance": 1888260, "otherDrivingDistance": 497860,
+    "cityDrivingTime": 149951, "extraUrbanDrivingTime": 176327,
+    "highwayDrivingTime": 62519, "otherDrivingTime": 31418,
+    "higherMileageProvince": "XX", "higherMileageProvinceFullName": "<Province>",
+    "higherMileageProvinceDrivingPerc": 41.58, "higherMileageProvinceTimePerc": 52.54,
+    "mondayDrivingDistance": 749450, /* ... through sunday ... */
+    "mondayDrivingTime": 65509,      /* ... through sunday ... */
+    "totalDaysUsedForAnalysis": 91
+  }]
+}
+```
+
+**Units are metres and seconds.** Not stated anywhere; derived by cross-check. 5431730 / 420215 = 12.9 m/s = 46 km/h average over mixed driving, which is the only reading that makes sense. Anything treating `totalDistance` as kilometres will be out by 1000x.
+
+Four fields the 6.3.6 model didn't have: `toDate`, `totalDistance`, `totalDrivingTime`, `totalDaysUsedForAnalysis`. The decompiled `VehicleUsage` class is incomplete relative to the live API, so trust the wire over the model.
+
+Good material for long-term-statistics sensors, not for live state. It's a cumulative record, so feed it as a total, not a delta.
 
 There's also a `Positions` model (note the plural, distinct from `Location`) with `latitude`, `longitude`, `speed`, `heading`, `quality`, `samplingRate`, `isClimax`, `date`, and a list of `accelerations`. It's the per-sample crash reconstruction shape, reachable through the `crashes` endpoints. That's where actual GPS traces live, though only around crash events.
 
@@ -208,42 +313,71 @@ One practical catch: **scope the interception to `apphub.unipolsai.it`**. Proxyi
 
 What maps cleanly:
 
-| Entity | Source |
-|---|---|
-| `device_tracker` per vehicle | `lastPosition` → `lat`/`lon`, with `gps_accuracy` from `accuracy` |
-| `sensor` speed | `lastPosition.speed` |
-| `sensor` heading | `lastPosition.heading` |
-| `sensor` position age | `lastPosition.date` |
-| `sensor` refreshes used today | `dailyFruitions.current` / `.max`, exposed so automations can back off |
-| `binary_sensor` refresh pending | `pendingRequest` |
-| `sensor` distance by road type / weekday | `vehicleUsages`, long-term statistics |
-| `binary_sensor` RCA valid | `basicInsuranceCoverage` |
-| event on crash | `crashes` |
+| Entity | Source | Watch out for |
+|---|---|---|
+| `device_tracker` per vehicle | `lastPosition.lat` / `.lon` | **Do not** map `accuracy` to `gps_accuracy`. It's a grade, not metres; `1` would claim a 1 m fix. Leave `gps_accuracy` unset. |
+| `sensor` speed | `lastPosition.speed` | km/h, int |
+| `sensor` heading | `lastPosition.heading` | cardinal letter, so this is a text sensor, not degrees |
+| `sensor` position age | `lastPosition.date` | epoch **millis**, divide by 1000 |
+| `sensor` forced refreshes used today | `dailyFruitions.current` / `.max` | expose both so automations can back off |
+| `sensor` service credits left | `vehicleVAS[carFinder].serviceAvailableCredits` | the second, slower budget |
+| `binary_sensor` refresh pending | `lastPosition.pendingRequest` | never yet observed true |
+| `sensor` total distance / driving time | `vehicleUsages` totals | **metres and seconds**; cumulative, so `total`, not `total_increasing` |
+| `sensor` distance by road type / weekday | `vehicleUsages` | long-term statistics material |
+| `binary_sensor` RCA valid | `basicInsuranceCoverage` | |
+| event on crash | `crashes` | |
 
 Design notes:
 
-- **Config flow**: username + password, plus the `x-ibm-client-id` / `x-ibm-client-secret` / `x-unipol-tenant` triple until a cleaner way to derive them exists. Discover vehicles from `myTelematicContracts` rather than asking for plates.
-- **Two coordinators.** A cheap one polling `lastPosition` without `update` on a normal interval, and a separate quota-aware path for forced refreshes. Never call `update=true` from the routine poll.
-- **Expose forcing a refresh as a service/button**, not as automatic behaviour, so the quota stays under the user's control. Refuse the call when `current >= max`.
-- `vehicleUsages` changes daily at most. Poll it a couple of times a day.
-- Reuse the app's 401/403 handling: clear token, re-login, replay once.
-- Send a truthful `User-Agent` identifying the integration rather than impersonating the app, unless the gateway rejects it. Worth testing which the API tolerates.
+- **Config flow**: username + password, plus the `x-ibm-client-id` / `x-ibm-client-secret` / `x-unipol-tenant` triple until a cleaner way to derive them exists. Discover vehicles from `contrattiTelematici` (see below) rather than asking for plates, and remember to country-prefix the plate before using it as a path segment.
+- **Use one cookie-persisting session for everything.** The F5 cookies from login are as load-bearing as the JWT. `requests.Session` or `aiohttp.ClientSession` with a cookie jar, and a real login on startup. Don't build a stored-token model.
+- **Poll `lastPosition?update=false` freely.** It doesn't consume quota. The position simply goes stale between the car's own reports, which is fine for a `device_tracker`.
+- **Expose forcing a refresh as a button, never as automatic behaviour.** Five a day, shared across whatever else uses the account, including the phone app. Refuse when `current >= max`.
+- **Gate entity creation on `vehicleVAS`.** If `carFinder` has `isServiceActivated: false`, there's no position to read and the integration should say so rather than producing an unavailable tracker.
+- `vehicleUsages` is free and changes daily at most. Once or twice a day.
+- Reuse the app's 401/403 handling: on `403003`, re-login (which rebuilds the cookies) and replay once.
+- Send a truthful `User-Agent` identifying the integration rather than impersonating the app, unless the gateway rejects it. The verified call used the app's string, so this still needs one comparison run.
+
+### Vehicle discovery
+
+`api/priv/contesto-utente/v2/me/contrattiTelematici` is a better discovery call than `myTelematicContracts`: one request, and it returns everything a config flow needs.
+
+```jsonc
+{ "auto": { "contrattiAuto": [{
+      "identificativoTelematico": "...", "statoContratto": "open",
+      "dataInizio": 1781913600000, "dataFine": 1813449600000,
+      "statoTerminale": "active",
+      "veicolo": { "tipo": 1, "marca": "<MAKE>", "modello": "<MODEL>", "targa": "AB123CD" },
+      "dispositivoTelematico": { "idDispositivo": "...", "tipoDispositivo": "F", "imei": "..." }
+    }], "codice": 200200 },
+  "immobili": { "contrattiImmobili": [], "codice": 404404, "message": "Contratti non trovati" },
+  "pet":      { "contrattiPet": [],      "codice": 404,    "message": "Contratti non trovati" } }
+```
+
+Note the per-section status codes. An empty section reports `404404` or `404` with `"Contratti non trovati"` inside an HTTP 200. That's a normal empty result, not an error, and the codes aren't consistent between sections. Check `statoContratto: "open"` and `statoTerminale: "active"` before creating entities. `targa` here is unprefixed and needs the `IT-` prefix adding.
 
 ## Open questions
 
-Settled:
+Settled by the live session:
 
 - ~~The `x-ibm-*` credentials.~~ Captured pre-login, in `.env.local`. `appSuffix` is `hub`.
 - ~~Whether the telematics API changed between 6.3.6 and 6.3.18.~~ It didn't.
+- ~~`date` format.~~ Epoch milliseconds, despite the declared `String` type.
+- ~~`accuracy` units.~~ Not metres. A small integer grade; observed `1`.
+- ~~`dailyFruitions.max`.~~ 5. And plain reads don't count against it, only `update=true`.
+- ~~Whether a bearer token is enough.~~ It isn't. The F5 session cookies from login are mandatory.
+- ~~What fills the `@HeaderMap`.~~ `service_type: Vehicle` and `company_id: unipolsai`.
+- ~~Plate format.~~ Country-prefixed, `IT-AB123CD`.
+- ~~Login OTP on a new device.~~ None was triggered on a fresh install and fresh emulator.
+- ~~`vehicleUsages` `dateRange` vocabulary.~~ `g` and `t` only, and the units are metres and seconds.
 
-Still open. All of these need one authenticated session against an account with a Unibox, which static analysis and an unauthenticated capture can't provide:
+Still open:
 
-1. Exact `date` format and timezone handling in `lastPosition`.
-2. Units of `accuracy`, and whether it's ever non-zero.
-3. What `max` actually is in `dailyFruitions`, and whether the quota is per day, per vehicle, or per account. **This one decides the polling design.**
-4. The `pendingRequest` cycle: how long until a forced fix lands, and the right poll cadence while waiting.
-5. Whether the gateway rejects a non-app `User-Agent`. `tools/probe.py` sends an honest one by default and has `--impersonate-app` to test the difference.
-6. Whether login triggers OTP/2FA on a new device fingerprint. There's a lot of OTP machinery in `LoginApi`.
+1. **The `pendingRequest` cycle.** Never observed as `true`, because no forced refresh has been made yet. How long a forced fix takes to land, and the right poll cadence while waiting, are unknown.
+2. **Whether a forced refresh spends a `dailyFruitions` unit, a `serviceAvailableCredits` unit, or both.** The two counters were 0/5 and 9/10 respectively at rest.
+3. Whether the gateway rejects a non-app `User-Agent`. The verified call impersonated the app. `tools/probe.py` sends an honest one by default, so this needs one comparison run.
+4. Whether `heading` uses 8-point (`"NE"`) or 16-point (`"NNE"`) cardinals. Only `"N"` observed.
+5. How long the F5 session lasts, and whether `login/refresh` renews the cookies or only the JWT. This decides how often the integration must fully re-login.
 7. Rate limits on the non-telematics endpoints.
 
 ## Legal note

@@ -9,6 +9,7 @@ appear, since those are the main thing a capture session is for.
 import json
 import os
 import pathlib
+import re
 
 KEEP = "apphub.unipolsai.it"
 DROP = ("tiqcdn", "tealium", "firebase", "crashlytics", "googleapis",
@@ -36,6 +37,33 @@ def _jsonify(raw):
             return None
 
 
+def _redact(value):
+    """Keep the shape, drop the secret.
+
+    The login POST carries the account password in cleartext and the response
+    carries a bearer token. Neither needs to be on disk to document the flow,
+    and captures/ outliving the session is exactly how credentials leak.
+    """
+    if isinstance(value, str):
+        # form-encoded login body
+        value = re.sub(r"(password=)[^&]*", r"\1<redacted>", value, flags=re.I)
+        return value
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            kl = k.lower()
+            if kl in ("password", "pwd", "pass"):
+                out[k] = "<redacted>"
+            elif kl == "token" and isinstance(v, str):
+                out[k] = f"<jwt {len(v)} chars, starts {v[:12]}...>"
+            else:
+                out[k] = _redact(v)
+        return out
+    if isinstance(value, list):
+        return [_redact(v) for v in value]
+    return value
+
+
 def response(flow):
     host = flow.request.pretty_host
     if KEEP not in host or any(d in host for d in DROP):
@@ -53,11 +81,13 @@ def response(flow):
         "path": flow.request.path.split("?")[0],
         "status": flow.response.status_code,
         "request_headers": {
-            k.lower(): v for k, v in flow.request.headers.items()
+            k.lower(): (f"Bearer <jwt {len(v) - 7} chars>" if k.lower() == "authorization"
+                        and v.startswith("Bearer ") else v)
+            for k, v in flow.request.headers.items()
             if k.lower() in HEADERS_OF_INTEREST
         },
-        "request_body": _jsonify(flow.request.content) if flow.request.content else None,
-        "response": _jsonify(flow.response.content) if flow.response.content else None,
+        "request_body": _redact(_jsonify(flow.request.content)) if flow.request.content else None,
+        "response": _redact(_jsonify(flow.response.content)) if flow.response.content else None,
     }
 
     OUT.parent.mkdir(parents=True, exist_ok=True)

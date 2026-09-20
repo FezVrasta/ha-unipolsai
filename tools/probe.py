@@ -64,8 +64,14 @@ class Unipol:
         if tenant:
             self.s.headers["x-unipol-tenant"] = tenant
 
-    def _headers(self) -> dict[str, str]:
-        return {"x-unipol-requestid": str(uuid.uuid4())}
+    def _headers(self, telematics: bool = False) -> dict[str, str]:
+        h = {"x-unipol-requestid": str(uuid.uuid4()), "accept": "application/json"}
+        if telematics:
+            # The @HeaderMap parameter on every TelematicsAutoService method.
+            # Required; the endpoints misbehave without them.
+            h["service_type"] = "Vehicle"
+            h["company_id"] = "unipolsai"
+        return h
 
     def login(self) -> None:
         r = self.s.post(
@@ -98,15 +104,23 @@ class Unipol:
 
     def get(self, path: str, **params):
         self._ensure_token()
+        tele = "/telematici/" in path
         r = self.s.get(BASE + path, params=params or None,
-                       headers=self._headers(), timeout=30)
-        # The app clears the session and replays once on these.
+                       headers=self._headers(tele), timeout=30)
+        # 403003 "No credential" means the F5 session went away, not just the
+        # JWT. Re-login rebuilds both, since the cookies ride on self.s.
         if r.status_code in (401, 403):
             self.login()
             r = self.s.get(BASE + path, params=params or None,
-                           headers=self._headers(), timeout=30)
+                           headers=self._headers(tele), timeout=30)
         r.raise_for_status()
         return r.json()
+
+    @staticmethod
+    def _plate(plate: str) -> str:
+        """The API wants the plate country-prefixed: AB123CD -> IT-AB123CD."""
+        plate = plate.strip().upper().replace(" ", "")
+        return plate if "-" in plate else f"IT-{plate}"
 
     # --- endpoints -------------------------------------------------------
 
@@ -114,22 +128,23 @@ class Unipol:
         return self.get("api/priv/telematici/contratti/v1/contracts/myTelematicContracts")
 
     def position(self, plate: str, update: bool = False):
+        # update is NOT optional: omitting it returns HTTP 400 with no body.
         return self.get(
-            f"api/priv/telematici/auto/v1/vehicles/{plate}/lastPosition",
-            **({"update": "true"} if update else {}),
+            f"api/priv/telematici/auto/v1/vehicles/{self._plate(plate)}/lastPosition",
+            update="true" if update else "false",
         )
 
-    def usage(self, plate: str, date_range: str = "LAST_MONTH"):
+    def usage(self, plate: str, date_range: str = "g"):
         return self.get(
-            f"api/priv/telematici/auto/v1/vehicles/{plate}/vehicleUsages",
+            f"api/priv/telematici/auto/v1/vehicles/{self._plate(plate)}/vehicleUsages",
             dateRange=date_range,
         )
 
     def crashes(self, plate: str):
-        return self.get(f"api/priv/telematici/auto/v1/vehicles/{plate}/crashes")
+        return self.get(f"api/priv/telematici/auto/v1/vehicles/{self._plate(plate)}/crashes")
 
     def vas(self, plate: str):
-        return self.get(f"api/priv/telematici/auto/v1/vehicles/{plate}/vehicleVAS")
+        return self.get(f"api/priv/telematici/auto/v1/vehicles/{self._plate(plate)}/vehicleVAS")
 
 
 def main() -> int:
@@ -140,7 +155,7 @@ def main() -> int:
     p.add_argument("plate", nargs="?", help="vehicle plate, uppercase")
     p.add_argument("--update", action="store_true",
                    help="force the box to report a fresh fix (costs one daily quota unit)")
-    p.add_argument("--range", default="LAST_MONTH", help="dateRange for usage")
+    p.add_argument("--range", default="g", help="dateRange for usage: g (whole contract) or t (needs dates)")
     p.add_argument("--impersonate-app", action="store_true",
                    help="send the app's own User-Agent instead of ours")
     args = p.parse_args()

@@ -7,24 +7,34 @@ Right now this is research, not an integration. No `custom_components/` yet.
 ## What's here
 
 - [`docs/FINDINGS.md`](docs/FINDINGS.md) — the reverse engineering writeup. API base URL, auth flow, required headers, the telematics endpoints, response models, and the integration design that falls out of them. Start here.
-- [`docs/endpoints.txt`](docs/endpoints.txt) — all 339 endpoint path templates extracted from the dex.
+- [`docs/endpoints.txt`](docs/endpoints.txt) — all 312 endpoint path templates extracted from the dex.
 - [`docs/CAPTURE.md`](docs/CAPTURE.md) — how to capture live traffic to fill the remaining gaps.
 - `tools/` — emulator capture scripts and a standalone API probe.
 - `apk/`, `decompiled/`, `captures/` — gitignored working directories.
 
 ## State of play
 
-Static analysis is done and the API is fully mapped. The GPS endpoint is:
+Static analysis is done, and the API is now **verified working end to end against a real account with an active Unibox**.
 
 ```
-GET https://apphub.unipolsai.it/hub/api/priv/telematici/auto/v1/vehicles/{plate}/lastPosition
+GET https://apphub.unipolsai.it/hub/api/priv/telematici/auto/v1/vehicles/IT-AB123CD/lastPosition?update=false
+-> {"operationResult":{"type":0},
+    "lastPosition":{"date":1789889311000,"lat":45.464200,"lon":9.1900,"speed":0,
+                    "heading":"N","accuracy":1,"pendingRequest":false,
+                    "dailyFruitions":{"current":0,"max":5}}}
 ```
 
-returning `lat`, `lon`, `speed`, `heading`, `accuracy`, `date`, and a `dailyFruitions` quota counter. Login is a form POST returning a JWT. There's no certificate pinning and the app trusts user CAs, so capturing traffic is straightforward.
+The five things that were not knowable from the code, and would each have broken a first attempt:
 
-**The `x-ibm-client-id` / `x-ibm-client-secret` / `x-unipol-tenant` triple is captured** and sits in `.env.local` (gitignored). The app fetches them at cold start before any login, so grabbing them needed no account. `appSuffix` is `hub`.
+1. **The bearer token alone gets you HTTP 403.** There's an F5 BIG-IP session cookie layer (`MRHSession`, `JSESSIONID`) established at login that must be carried on every call. The integration needs a cookie-persisting session and a real login, not a stored token.
+2. **The plate is country-prefixed**: `IT-AB123CD`. A bare plate doesn't work, and the prefix appears nowhere in the app or its code.
+3. **Telematics calls need two extra headers**, `service_type: Vehicle` and `company_id: unipolsai`. These fill the `@HeaderMap` the decompile left empty.
+4. **`update` is a required query parameter.** Omitting it is a 400.
+5. **Field types in the decompiled models are wrong.** `date` is epoch millis despite being declared `String`, `heading` is a cardinal letter (`"N"`) not degrees, and `accuracy` is a small grade, not metres.
 
-One thing still blocks the integration: **the `dailyFruitions` quota semantics.** There's a hard server-side daily cap on forced position refreshes, and the polling design depends entirely on what `max` is, whether it's scoped per day, per vehicle or per account, and how long the `pendingRequest` cycle takes to settle. That needs one authenticated session against an account with a Unibox. See [`docs/CAPTURE.md`](docs/CAPTURE.md).
+**Quota, which drives the whole polling design:** reads are free. `dailyFruitions` was `0/5` after many `update=false` calls, so only forcing a fresh fix counts, and you get five a day. Separately, `vehicleVAS` carries a slower per-service credit pool (`carFinder` at 9 of 10). `rangeStatistics` needs no credits at all, so driving statistics are free to poll.
+
+Still open: the `pendingRequest` cycle. No forced refresh has been made yet, so how long a fresh fix takes to land, and which of the two counters it spends, are unknown. Everything else needed to write the integration is settled.
 
 ## Reproducing the analysis
 
