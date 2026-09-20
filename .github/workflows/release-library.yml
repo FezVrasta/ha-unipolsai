@@ -122,7 +122,10 @@ jobs:
 
   sync:
     name: Commit the version back
-    needs: publish
+    # Both, not just publish: the `needs` context only exposes the jobs a job
+    # actually lists, so naming publish alone made needs.build.outputs.version
+    # empty and the sed below wrote version = "" back to main.
+    needs: [build, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -134,10 +137,14 @@ jobs:
       - name: Set the version from the tag
         run: |
           VERSION="${{ needs.build.outputs.version }}"
+          # A blank version here once rewrote both files to version = "" and
+          # committed it, which left main unbuildable. Never sed on an empty.
+          [ -n "$VERSION" ] || { echo "::error::empty version"; exit 1; }
           sed -i "0,/^version = \".*\"$/s//version = \"$VERSION\"/" \
             pyunipolsai/pyproject.toml
           sed -i "0,/^__version__ = \".*\"$/s//__version__ = \"$VERSION\"/" \
             pyunipolsai/src/pyunipolsai/__init__.py
+          grep -q "^version = \"$VERSION\"$" pyunipolsai/pyproject.toml
 
       - name: Commit if it changed
         run: |
