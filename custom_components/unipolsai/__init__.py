@@ -12,7 +12,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .api import UnipolSaiApi, UnipolSaiAuthError, UnipolSaiError
-from .const import CONF_CLIENT_ID, CONF_CLIENT_SECRET, CONF_TENANT, DOMAIN
+from .helpers import gateway_credentials
 from .coordinator import UnipolSaiCoordinator, UnipolSaiUsageCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -21,6 +21,7 @@ PLATFORMS = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
     Platform.DEVICE_TRACKER,
+    Platform.EVENT,
     Platform.SENSOR,
 ]
 
@@ -46,9 +47,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: UnipolSaiConfigEntry) ->
         session,
         entry.data[CONF_USERNAME],
         entry.data[CONF_PASSWORD],
-        entry.data[CONF_CLIENT_ID],
-        entry.data[CONF_CLIENT_SECRET],
-        entry.data[CONF_TENANT],
+        *gateway_credentials(entry),
     )
 
     try:
@@ -89,7 +88,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: UnipolSaiConfigEntry) ->
 
     entry.runtime_data = data
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     return True
+
+
+async def _async_reload_entry(hass: HomeAssistant, entry: UnipolSaiConfigEntry) -> None:
+    """Reload when the gateway credentials are overridden."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: UnipolSaiConfigEntry) -> bool:

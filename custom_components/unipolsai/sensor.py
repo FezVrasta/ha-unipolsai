@@ -24,6 +24,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import UnipolSaiConfigEntry
+from .const import ALERT_SERVICES
 from .entity import UnipolSaiEntity, UnipolSaiUsageEntity
 
 
@@ -172,6 +173,12 @@ async def async_setup_entry(
             UnipolSaiPositionSensor(coordinator, description)
             for description in POSITION_SENSORS
         )
+        vas = (coordinator.data or {}).get("vas") or {}
+        entities.extend(
+            UnipolSaiLastAlertSensor(coordinator, service, event_type)
+            for service, event_type in ALERT_SERVICES.items()
+            if (vas.get(service) or {}).get("isServiceActivated")
+        )
         if usage := data.usage.get(plate):
             entities.extend(
                 UnipolSaiUsageSensor(usage, description, coordinator.vehicle)
@@ -209,3 +216,37 @@ class UnipolSaiUsageSensor(UnipolSaiUsageEntity, SensorEntity):
     @property
     def native_value(self) -> Any:
         return self.entity_description.value_fn(self.coordinator.data or {})
+
+
+class UnipolSaiLastAlertSensor(UnipolSaiEntity, SensorEntity):
+    """When the most recent event for one alert service happened."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, coordinator, service: str, event_type: str) -> None:
+        super().__init__(coordinator, f"last_{service}")
+        self._service = service
+        self._attr_translation_key = f"last_{event_type}"
+
+    @property
+    def native_value(self) -> datetime | None:
+        notifications = (
+            (self.coordinator.data or {}).get("notifications") or {}
+        ).get(self._service) or []
+        if not notifications:
+            return None
+        return _epoch_ms(notifications[0].get("eventDate"))
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        notifications = (
+            (self.coordinator.data or {}).get("notifications") or {}
+        ).get(self._service) or []
+        if not notifications:
+            return {}
+        latest = notifications[0]
+        return {
+            "latitude": latest.get("latitude"),
+            "longitude": latest.get("longitude"),
+            "speed": latest.get("speed"),
+        }

@@ -103,6 +103,12 @@ The config flow asks for your Unipol username and password, plus the three gatew
 | `sensor` total / city / extra-urban / motorway distance, driving time | from `vehicleUsages`, free to poll |
 | `sensor` most driven province and its share | |
 | `binary_sensor` refresh pending, Car Finder active | |
+| `event` engine started | fires on a new `engineOn` notification, with the coordinates it happened at |
+| `sensor` last engine start | timestamp of that event |
 | `button` Locate now | forces a fresh fix; unavailable once the daily budget is gone |
+
+Alert entities are created only for services the contract has switched on, so `speedLimit`, `targetArea` and `carMovedEngineOff` appear automatically if you activate them.
+
+Engine-start events are **polled, not pushed** — the app gets a push notification, but there's no push path into HA. With the default five-minute interval an event can surface up to five minutes late, and since the API returns only the most recent notification, two starts inside one interval collapse into one. Notification reads are free, so shortening `SCAN_INTERVAL` in `const.py` is the fix if you want it snappier.
 
 Position and statistics polling are free, so they run on a normal interval. **Locate now** is the only thing that spends quota, which is why it's a button and not automatic. Pressing it fires the request and then waits out the roughly five-minute cycle; if the car is parked with the engine off the box will not answer and the position stays unchanged, which costs nothing.

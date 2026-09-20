@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "UnipolSai Unibox",
-        "description": "Sign in with your Unipol account. The gateway credentials are the app's own; see the integration docs for how to obtain them.",
+        "description": "Sign in with your Unipol account.",
         "data": {
           "username": "Username",
           "password": "Password",
@@ -15,7 +15,9 @@
       "reauth_confirm": {
         "title": "Sign in again",
         "description": "The Unipol session for {username} expired and could not be renewed.",
-        "data": { "password": "Password" }
+        "data": {
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -31,26 +33,131 @@
   },
   "entity": {
     "sensor": {
-      "speed": { "name": "Speed" },
-      "heading": { "name": "Heading" },
-      "last_fix": { "name": "Last fix" },
-      "refreshes_used": { "name": "Refreshes used today" },
-      "refreshes_remaining": { "name": "Refreshes remaining today" },
-      "car_finder_credits": { "name": "Car Finder credits" },
-      "total_distance": { "name": "Total distance" },
-      "city_distance": { "name": "City distance" },
-      "extra_urban_distance": { "name": "Extra-urban distance" },
-      "highway_distance": { "name": "Motorway distance" },
-      "total_driving_time": { "name": "Total driving time" },
-      "top_province": { "name": "Most driven province" },
-      "top_province_share": { "name": "Most driven province share" }
+      "speed": {
+        "name": "Speed"
+      },
+      "heading": {
+        "name": "Heading"
+      },
+      "last_fix": {
+        "name": "Last fix"
+      },
+      "refreshes_used": {
+        "name": "Refreshes used today"
+      },
+      "refreshes_remaining": {
+        "name": "Refreshes remaining today"
+      },
+      "car_finder_credits": {
+        "name": "Car Finder credits"
+      },
+      "total_distance": {
+        "name": "Total distance"
+      },
+      "city_distance": {
+        "name": "City distance"
+      },
+      "extra_urban_distance": {
+        "name": "Extra-urban distance"
+      },
+      "highway_distance": {
+        "name": "Motorway distance"
+      },
+      "total_driving_time": {
+        "name": "Total driving time"
+      },
+      "top_province": {
+        "name": "Most driven province"
+      },
+      "top_province_share": {
+        "name": "Most driven province share"
+      },
+      "last_engine_on": {
+        "name": "Last engine start"
+      },
+      "last_moved_engine_off": {
+        "name": "Last move with engine off"
+      },
+      "last_speed_limit_exceeded": {
+        "name": "Last speed limit exceeded"
+      },
+      "last_target_area": {
+        "name": "Last target area event"
+      }
     },
     "binary_sensor": {
-      "refresh_pending": { "name": "Refresh pending" },
-      "car_finder_active": { "name": "Car Finder" }
+      "refresh_pending": {
+        "name": "Refresh pending"
+      },
+      "car_finder_active": {
+        "name": "Car Finder"
+      }
     },
     "button": {
-      "force_refresh": { "name": "Locate now" }
+      "force_refresh": {
+        "name": "Locate now"
+      }
+    },
+    "event": {
+      "engine_on": {
+        "name": "Engine started",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "engine_on": "Engine started"
+            }
+          }
+        }
+      },
+      "moved_engine_off": {
+        "name": "Moved with engine off",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "moved_engine_off": "Moved with engine off"
+            }
+          }
+        }
+      },
+      "speed_limit_exceeded": {
+        "name": "Speed limit exceeded",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "speed_limit_exceeded": "Speed limit exceeded"
+            }
+          }
+        }
+      },
+      "target_area": {
+        "name": "Target area",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "target_area": "Target area"
+            }
+          }
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "API gateway credentials",
+        "description": "These ship with the integration and only need changing if Unipol rotates them. See the integration docs for how to capture new ones.",
+        "data": {
+          "ibm_client_id": "API client id",
+          "ibm_client_secret": "API client secret",
+          "tenant": "Tenant"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the Unipol API with those values.",
+      "invalid_auth": "The saved account credentials were rejected.",
+      "no_vehicles": "No vehicle with an active Unibox was found.",
+      "unknown": "Unexpected error."
     }
   }
 }

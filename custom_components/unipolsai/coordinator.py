@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import UnipolSaiApi, UnipolSaiAuthError, UnipolSaiError
 from .const import (
+    ALERT_SERVICES,
     DOMAIN,
     REFRESH_POLL_INTERVAL,
     REFRESH_TIMEOUT,
@@ -56,11 +57,33 @@ class UnipolSaiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.api.last_position(self.plate),
                 self.api.vehicle_vas(self.plate),
             )
+            # Only ask about alerts the contract actually has switched on.
+            active = [
+                name
+                for name in ALERT_SERVICES
+                if (vas.get(name) or {}).get("isServiceActivated")
+            ]
+            results = await asyncio.gather(
+                *(self.api.last_notifications(self.plate, name) for name in active),
+                return_exceptions=True,
+            )
         except UnipolSaiAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except UnipolSaiError as err:
             raise UpdateFailed(str(err)) from err
-        return {"position": position, "vas": vas}
+
+        notifications: dict[str, list[dict]] = {}
+        for name, result in zip(active, results, strict=True):
+            if isinstance(result, Exception):
+                # One flaky alert endpoint shouldn't take the position with it.
+                _LOGGER.debug("lastNotifications(%s) failed: %s", name, result)
+                notifications[name] = (self.data or {}).get(
+                    "notifications", {}
+                ).get(name, [])
+            else:
+                notifications[name] = result
+
+        return {"position": position, "vas": vas, "notifications": notifications}
 
     @property
     def refresh_in_progress(self) -> bool:

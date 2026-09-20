@@ -265,6 +265,39 @@ The six `serviceName` values, which are the `{serviceName}` path segment elsewhe
 
 `rangeStatistics` has `serviceRequiredCredits: false`, so the driving statistics behind `vehicleUsages` are **free to poll**. Check `isServiceActivated` before creating entities: a position sensor is meaningless if `carFinder` is off.
 
+### `lastNotifications`
+
+`GET .../{plate}/lastNotifications?vehicleVAS={serviceName}`. Alert events produced by one VAS. **Returns only the single most recent event**, despite the plural field name.
+
+```jsonc
+{
+  "operationResult": { "type": 0 },
+  "serviceNotifications": [{
+    "id": "<uuid>",            // changes per event; use it to detect a new one
+    "voucherId": "27778190",         // == identificativoTelematico on the contract
+    "eventDate": 1789885957000,      // epoch millis
+    "userCode": "<codice fiscale>",
+    "vehiclePlate": "IT-AB123CD",    // prefixed here, unlike in contrattiTelematici
+    "tspName": "Alfa",               // telematics service provider
+    "accuracy": 1,
+    "latitude": 45.480000, "longitude": 9.200000,
+    "speed": 0,
+    "speedLimitValue": 0,
+    "targetAreaLatitude": 0.0, "targetAreaLongitude": 0.0, "targetAreaRadius": 0
+  }]
+}
+```
+
+Each event carries **its own coordinates**, which is more useful than it sounds: an `engineOn` event tells you where the car was started, independently of `lastPosition`.
+
+Two corrections to the decompiled `ServiceNotification`: `tspName` exists on the wire but not in the model, and `luogoName` exists in the model but not on the wire, so it's populated client-side.
+
+The `speedLimitValue` and `targetArea*` fields are shared across all alert types and come back zeroed for `engineOn`. Which fields are meaningful depends on the service queried.
+
+Reading notifications is a plain read. The credits on an alert service pay for having it switched on, not for polling what it produced.
+
+**The app gets these as push; there's no push path here.** Polling means an event surfaces up to one poll interval late, and because only the latest is returned, two starts inside one interval collapse into one.
+
 ### `vehicleUsages`
 
 A wide statistics record, not a trip list. **Free to poll**: `rangeStatistics` has `serviceRequiredCredits: false` and it doesn't touch `dailyFruitions`.

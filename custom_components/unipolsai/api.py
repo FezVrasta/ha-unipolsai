@@ -175,6 +175,23 @@ class UnipolSaiApi:
         )
         return {s["serviceName"]: s for s in body.get("vehicleVAS") or []}
 
+    async def last_notifications(self, plate: str, service: str) -> list[dict]:
+        """Recent alert events for one VAS, newest first.
+
+        `service` is a serviceName from vehicle_vas, e.g. engineOn. The
+        credits on that service pay for having it switched on; reading the
+        notifications it produced is a plain read.
+        """
+        body = await self._get(
+            f"api/priv/telematici/auto/v1/vehicles/"
+            f"{self.normalise_plate(plate)}/lastNotifications",
+            telematics=True,
+            vehicleVAS=service,
+        )
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER.debug("lastNotifications(%s) raw: %s", service, body)
+        return body.get("serviceNotifications") or []
+
     async def vehicle_usages(self, plate: str) -> dict:
         """Driving statistics. Free: rangeStatistics needs no credits.
 
