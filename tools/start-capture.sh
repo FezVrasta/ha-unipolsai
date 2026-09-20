@@ -29,7 +29,13 @@ if pgrep -f "mitmdump.*$PORT" > /dev/null; then
 else
   FLOW="$CAPTURES/unipol-$(date +%Y%m%d-%H%M%S).flow"
   echo "starting mitmdump -> $FLOW (+ captures/flows.jsonl)"
+  # --allow-hosts scopes interception to the API host. Everything else passes
+  # through as raw TCP. Without this, mitmproxy also sits in front of the app's
+  # web content and breaks it: www.unipol.it sends a header value with
+  # surrounding whitespace that trips mitmproxy's HTTP/2 parser, and the
+  # analytics hosts blow up if DNS sinkholes them.
   nohup mitmdump --listen-port "$PORT" -w "$FLOW" -s "$ROOT/tools/capture_addon.py" \
+    --allow-hosts 'apphub\.unipolsai\.it' \
     > "$CAPTURES/mitmdump.log" 2>&1 &
   sleep 3
   echo "$FLOW" > "$CAPTURES/.current-flow"

@@ -22,8 +22,8 @@ api/priv/contesto-utente/v1/me/utente
 api/priv/contesto-utente/v1/sendform
 api/priv/contesto-utente/v2/me/agenzie
 api/priv/contesto-utente/v2/me/contrattiTelematici
-api/priv/contesto-utente/v2/me/polizze
 api/priv/contesto-utente/v2/me/recapiti
+api/priv/contesto-utente/v3/me/polizze
 api/priv/contratti/v1/attivita
 api/priv/contratti/v1/campagna/attivita
 api/priv/contratti/v1/polizze/myPolicyEnhanced
@@ -113,7 +113,7 @@ api/priv/pagamenti/v2/metodiPagamento/{idMetodoPagamento}
 api/priv/pagamenti/v2/metodiPagamento/{numArchivio}
 api/priv/polizza-collettiva/v1/adesione
 api/priv/polizza-collettiva/v1/teste
-api/priv/polizze-previdenza/v1/previdenza/polizze
+api/priv/polizze-previdenza/v2/previdenza/polizze
 api/priv/preferiti/userBehaviours/v1/myRegistry/create
 api/priv/preferiti/userBehaviours/v1/myRegistry/modify
 api/priv/preferiti/v1/gestione-revoche/salva/{PARTYID}
@@ -142,8 +142,6 @@ api/priv/registrazioni/v1/registrazione/{identityCert}/login
 api/priv/registrazioni/v1/registrazione/{identityCert}/recupera-informazioni
 api/priv/registrazioni/v1/registrazione/{oldUsername}/cambia-utente/{newUsername}
 api/priv/registrazioni/v1/registrazione/{username}/verifica-pin/{pin}/
-api/priv/registrazioni/v1/unsecure/registrazione/otp/{hmac}/richiesta
-api/priv/registrazioni/v1/unsecure/registrazione/otp/{hmac}/verifica
 api/priv/registrazioni/v1/utente/otp/2
 api/priv/registrazioni/v1/utente/otp/v2/1
 api/priv/registrazioni/v1/utente/otp/{codiceOtp}/{tipologia}
@@ -177,22 +175,6 @@ api/priv/telematici/auto/v1/vehicles/{vehiclePlate}/vehicleVAS/{serviceName}/pro
 api/priv/telematici/auto/v1/vehicles/{vehiclePlate}/vehicleVAS/{serviceName}/recharge
 api/priv/telematici/auto/v1/vehicles/{vehiclePlate}/vehicleVAS/{serviceName}/serviceRecharges
 api/priv/telematici/auto/v1/voucher/{voucherId}/tracking
-api/priv/telematici/commercio/v1/IPDevices/{deviceId}/liveStreamingURL
-api/priv/telematici/commercio/v1/IPDevices/{deviceMAC}/modify
-api/priv/telematici/commercio/v1/IPDevices/{mac}
-api/priv/telematici/commercio/v1/IPDevices/{mac}/snapshot
-api/priv/telematici/commercio/v1/RFDevices/{deviceId}/modify
-api/priv/telematici/commercio/v1/RFDevices/{id}
-api/priv/telematici/commercio/v1/events
-api/priv/telematici/commercio/v1/kits/{gatewayMAC}/RFDevice
-api/priv/telematici/commercio/v1/kits/{kitId}/IPDevice/{deviceMAC}/modify
-api/priv/telematici/commercio/v1/kits/{kitId}/pin
-api/priv/telematici/commercio/v1/kits/{kitId}/pin/modify
-api/priv/telematici/commercio/v1/kits/{kitId}/pin/reset
-api/priv/telematici/commercio/v1/kits/{kitId}/security
-api/priv/telematici/commercio/v1/kits/{kitId}/security/modify
-api/priv/telematici/commercio/v1/myTelematicContracts
-api/priv/telematici/commercio/v1/myTelematicContracts/{telematicId}
 api/priv/telematici/contratti/v1/
 api/priv/telematici/contratti/v1/contracts/myTelematicContracts
 api/priv/tpd-utenti-reclami/v1/reclami/listaReclami
@@ -275,10 +257,6 @@ api/priv/v1/polizze/documento/{codiceDocumento}
 api/priv/v2/polizze/documenti/{idContratto}
 api/priv/vouchers/v1/lista
 api/priv/vouchers/v2/lista/attiva
-api/priv/wcm/connect/UnipolSai-Contenuto-App-Hub/contenuti-app-hub
-api/priv/wcm/connect/UnipolSai-Contenuto-App-Hub/contenuti-app-hub/AppHubIntroContainer_Riservata
-api/priv/wcm/connect/UnipolSai-Contenuto-App-Hub/contenuti-app-hub/AppHubSubHeaderContainer_PF
-api/priv/wcm/connect/UnipolSai-Contenuto-App-Hub/contenuti-app-hub/AppHubSubHeaderContainer_PG
 api/priv/welfare/prenotazioni/v1/assicurati
 api/priv/welfare/prenotazioni/v1/prenotazioni
 api/priv/welfare/prenotazioni/v1/prenotazioni/{codiceSinistro}/prenotazione
@@ -310,7 +288,6 @@ api/pub/indirizzi/v1/province
 api/pub/indirizzi/v2/normalizza
 api/pub/istantanee/v1/cercaCodiceFiscale
 api/pub/istantanee/v1/documentazionePrecontrattuale
-api/pub/istantanee/v1/normalizza
 api/pub/istantanee/v1/pagamentoOneShotPolizzaGo
 api/pub/istantanee/v1/richiestaEmissionePolizza
 api/pub/istantanee/v1/verificaSconto
@@ -324,9 +301,7 @@ api/pub/registrazioni/v1/unsecure/registrazione/{username}/cambio-password/
 api/pub/registrazioni/v1/unsecure/registrazione/{username}/verifica/
 api/pub/registrazioni/v1/unsecure/utente/otp/{tipologia}/hmac/{hmac}
 api/pub/registrazioni/v1/unsecure/utenti/contatti
-api/pub/registrazioni/v1/unsecure/utenti/genera-password
 api/pub/registrazioni/v1/utenti/{username}/password
-api/pub/registrazioni/v2/unsecure/utenti/reset-password
 api/pub/riconoscimento-targa/v1/veicolo/riconoscimento
 api/pub/sinistri/denuncia/v1
 api/pub/tpd/telepedaggio-us/post-vendita/v1/contratti/{idContratto}/segnalazioni
@@ -335,5 +310,3 @@ api/pub/tpd/telepedaggio/servizi-mobilita/v1/contratti/{idContratto}/dispositivi
 api/pub/v1/otp/processo/ap/utente/recapiti
 api/pub/v1/otp/processo/ap/{idProcesso}
 api/pub/v1/otp/processo/ap/{idProcesso}/sessione/{idSessione}
-api/pub/wcm/connect/UnipolSai-Contenuto-App-Hub/contenuti-app-hub
-api/pub/wcm/connect/UnipolSai-Contenuto-App-Hub/contenuti-app-hub/AppHubIntroContainer_Pubblica

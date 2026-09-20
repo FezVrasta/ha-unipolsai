@@ -10,9 +10,9 @@ Short answer: yes. There's a clean REST API behind a JWT, and `lastPosition` ret
 |---|---|
 | Package | `com.UnipolSaiApp` |
 | Store name | Unipol Assicurazioni (formerly UnipolSai) |
-| Version | 6.3.6, version code 42549 |
-| minSdk / targetSdk | 24 / 36 |
-| ABI analysed | arm64-v8a (split APK, 116 MB total) |
+| Version analysed | 6.3.18, version code 42642 |
+| minSdk / targetSdk | 32 / 36 |
+| ABI analysed | arm64-v8a (split APK, 163 MB total) |
 | Capacitor appId | `it.unipol.unipolsai.store.clientitpd.coll` |
 
 Signer:
@@ -24,11 +24,15 @@ SHA-1    0d19bb735153ecc04610ede8d3f28f92bd719277
 RSA 2048, APK Signature Scheme v2 + v3
 ```
 
-The APK also carries a **Google Play source stamp** signed by `CN=Android, O=Google Inc.` which verifies. That proves the binary is the unmodified Play Store build even though it was fetched through a mirror. Worth re-checking with `apksigner verify --print-certs` on any future pull.
+**The app force-updates.** 6.3.6 from a mirror installs fine but refuses to get past its launch screen, so it has to be updated through the Play Store before it's usable. The analysed 6.3.18 was therefore pulled straight off the device with `adb pull` after Play installed it, which is the best provenance available: it's the binary Play actually shipped, and the signer matches. The google_apis emulator image has `com.android.vending` even with `PlayStore.enabled=no` in the AVD config, so this works without a Play-enabled image.
+
+Verify the signer on any future pull with `apksigner verify --print-certs`. A mirror-sourced APK additionally carries a Google Play source stamp (`CN=Android, O=Google Inc.`) that should verify.
+
+Everything below was first mapped on 6.3.6 and re-verified against 6.3.18. The auth layer, header set, `network_security_config` and the entire `telematici/auto` tree are unchanged between the two. What did change: `telematici/commercio` (the home/business Unibox tree) was dropped, `contesto-utente/me/polizze` went v2 to v3, `polizze-previdenza` v1 to v2, and two `registrazioni` OTP endpoints disappeared. 312 endpoints now, down from 339.
 
 ## Architecture
 
-Three UI stacks in one app, which is why it's 116 MB:
+Three UI stacks in one app, which is why it runs to 163 MB:
 
 - **Native Android** (Kotlin/Java, Compose in places). All the telematics and account code lives here. This is the part that matters.
 - **Capacitor** web bundle in `assets/public/` (Angular). Configured with `server.hostname = mobile.unipolsai.it`. Plugins: `@capacitor/geolocation`, `app`, `browser`, `device`, `network`, plus two in-house ones from Reply (`us-actionmanager-plugin`, `us-imagemanager-plugin`).
@@ -42,7 +46,7 @@ Third-party SDKs worth knowing about, because they show up in captured traffic a
 
 Base URL: `https://apphub.unipolsai.it/hub/`
 
-It's an IBM API Connect gateway. 339 distinct endpoint path templates were extracted from the dex; the full list is in [`endpoints.txt`](endpoints.txt).
+It's an IBM API Connect gateway. 312 distinct endpoint path templates were extracted from the dex; the full list is in [`endpoints.txt`](endpoints.txt).
 
 ### Authentication
 
@@ -80,7 +84,7 @@ From the OkHttp interceptor (`com.UnipolSaiApp.newapp.network.C5673b`), applied 
 | Header | Value |
 |---|---|
 | `Authorization` | `Bearer <JWT.token>` (omitted when not logged in) |
-| `User-Agent` | `UnipolSaiApp/6.3.6 Version Code 42549 (Android <rel>; <model>; <brand> <device>;)` |
+| `User-Agent` | `UnipolSaiApp/6.3.18 Version Code 42642 (Android <rel>; <model>; <brand> <device>;)` |
 | `source` | `mobile` |
 | `x-unipol-canale` | `APP` |
 | `x-unipol-requestid` | fresh random UUID v4 per request |
@@ -90,19 +94,25 @@ From the OkHttp interceptor (`com.UnipolSaiApp.newapp.network.C5673b`), applied 
 | `x-unipol-firebase-config` | Firebase Remote Config variant selector |
 | `x-unipol-glassbox-session-id` | session recording id, empty string is accepted |
 
-The `x-ibm-*` pair is the one unsolved piece. It isn't hardcoded. The app fetches it at runtime:
+The `x-ibm-*` pair isn't hardcoded. The app fetches it at runtime:
 
 ```
-POST api/pub/configurazioni/v1/unipolsai-mobile/apicConfig/{appSuffix}
+POST api/pub/configurazioni/v1/unipolsai-mobile/apicConfig/hub
 Body: { algId, hash, timestamp }
 ```
 
-That request is itself guarded by a hash, so it isn't trivially replayable. Two practical ways around it:
+`appSuffix` is `hub`. That request is guarded by a hash, so it isn't trivially replayable on its own.
 
-1. Read the values out of the device after the app has run once. They land in SharedPreferences (`UniPicUpPref` prefs file) under the keys `x-ibm-client-id`, `x-ibm-client-secret`, `x-unipol-tenant`.
-2. Capture them off the wire with mitmproxy, which is easier and gets the tenant at the same time.
+It doesn't need to be. **The app fetches the APIC config at cold start, before any login, and then sends the resulting headers on every subsequent request including the unauthenticated ones.** So proxying a fresh install as far as the login screen is enough to capture all three values. No account required.
 
-They look like long-lived app-wide credentials rather than per-user ones, so pinning them in the integration config is probably fine, with the caveat that Unipol can rotate them.
+Captured that way on 2026-09-20 and written to `.env.local` (gitignored, values deliberately not in this file). They're app-wide, not per-user: the same triple works for any account, and Unipol can rotate them whenever they like. Treat them as configuration with an expiry date, not as a constant.
+
+The fallback, if the config call ever stops going over the wire, is SharedPreferences after the app has run once:
+
+```bash
+adb shell run-as com.UnipolSaiApp cat \
+  /data/data/com.UnipolSaiApp/shared_prefs/UniPicUpPref.xml | grep -i 'ibm\|tenant'
+```
 
 ## Telematics endpoints
 
@@ -130,7 +140,7 @@ Also useful outside the telematics tree:
 - `api/priv/contesto-utente/v1/me/targhe`, plates on the account
 - `api/priv/mobilita/targhe/v1/utente/targhe`
 
-There's a parallel `api/priv/telematici/commercio/v1/...` tree for the home/business Unibox (IP cameras, RF sensors, alarm kits, `liveStreamingURL`, `snapshot`). Out of scope here but it's there if the house ever gets one.
+6.3.6 had a parallel `api/priv/telematici/commercio/v1/...` tree for the home/business Unibox (IP cameras, RF sensors, alarm kits, `liveStreamingURL`, `snapshot`). **6.3.18 dropped it from the app**, which probably means it moved to a separate app rather than that the server stopped serving it. Worth a look if the house ever gets one, but the paths in this repo's history are no longer evidence that they still work.
 
 ## Data models
 
@@ -192,6 +202,8 @@ This app is unusually easy to intercept:
 
 So mitmproxy works with just the CA installed as a user cert. No Frida, no system partition remount, no APK patching. See [`CAPTURE.md`](CAPTURE.md).
 
+One practical catch: **scope the interception to `apphub.unipolsai.it`**. Proxying everything breaks the app's web content. `www.unipol.it` returns a `Set-Cookie` value with surrounding whitespace, which trips mitmproxy's HTTP/2 header parser and kills the connection, and the analytics hosts fail noisily if local DNS sinkholes them. `--allow-hosts 'apphub\.unipolsai\.it'` passes everything else through as raw TCP and the app behaves normally.
+
 ## Home Assistant integration design
 
 What maps cleanly:
@@ -219,16 +231,20 @@ Design notes:
 
 ## Open questions
 
-Everything below needs a live capture with a real account to settle. Static analysis can't answer them.
+Settled:
+
+- ~~The `x-ibm-*` credentials.~~ Captured pre-login, in `.env.local`. `appSuffix` is `hub`.
+- ~~Whether the telematics API changed between 6.3.6 and 6.3.18.~~ It didn't.
+
+Still open. All of these need one authenticated session against an account with a Unibox, which static analysis and an unauthenticated capture can't provide:
 
 1. Exact `date` format and timezone handling in `lastPosition`.
 2. Units of `accuracy`, and whether it's ever non-zero.
-3. What `max` actually is in `dailyFruitions`, and whether the quota is per day, per vehicle, or per account.
+3. What `max` actually is in `dailyFruitions`, and whether the quota is per day, per vehicle, or per account. **This one decides the polling design.**
 4. The `pendingRequest` cycle: how long until a forced fix lands, and the right poll cadence while waiting.
-5. Whether `x-ibm-client-id` / `x-ibm-client-secret` are stable across app versions and accounts.
-6. Whether the gateway rejects a non-app `User-Agent`.
-7. Whether login triggers OTP/2FA on a new device fingerprint. There's a lot of OTP machinery in `LoginApi`.
-8. Rate limits on the non-telematics endpoints.
+5. Whether the gateway rejects a non-app `User-Agent`. `tools/probe.py` sends an honest one by default and has `--impersonate-app` to test the difference.
+6. Whether login triggers OTP/2FA on a new device fingerprint. There's a lot of OTP machinery in `LoginApi`.
+7. Rate limits on the non-telematics endpoints.
 
 ## Legal note
 

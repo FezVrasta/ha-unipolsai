@@ -30,8 +30,8 @@ import uuid
 import requests
 
 BASE = "https://apphub.unipolsai.it/hub/"
-APP_VERSION = "6.3.6"
-APP_BUILD = "42549"
+APP_VERSION = "6.3.18"
+APP_BUILD = "42642"
 
 
 class Unipol:

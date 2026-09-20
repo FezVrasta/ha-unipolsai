@@ -4,3 +4,4 @@ captures/
 .venv/
 __pycache__/
 *.pyc
+.env.local

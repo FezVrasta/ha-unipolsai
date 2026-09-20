@@ -2,7 +2,12 @@
 
 The app has no certificate pinning and its `network_security_config` trusts user CAs, so a plain mitmproxy setup works. No Frida, no system CA, no repackaging.
 
-I can't log in for you, so the login step is yours. Everything up to it is scripted.
+**The APIC credentials are already captured.** They're in `.env.local`. The app fetches them at cold start before any login, so that part needed no account and is done. What's left needs an authenticated session, and that means someone typing a password into the emulator.
+
+Two things to know before you start:
+
+- **The app force-updates.** A sideloaded mirror APK installs but won't get past the launch screen. Install it, then update through the Play Store on the emulator (`com.android.vending` is present on the google_apis image even with `PlayStore.enabled=no`).
+- **Interception is scoped to `apphub.unipolsai.it`.** Proxying everything breaks the app's web content: `www.unipol.it` sends a `Set-Cookie` with surrounding whitespace that trips mitmproxy's HTTP/2 parser, and the analytics hosts fail loudly against a DNS sinkhole. `start-capture.sh` passes `--allow-hosts` so everything else goes through as raw TCP.
 
 ## One-time setup
 
@@ -32,13 +37,13 @@ That filters the flow dump down to `apphub.unipolsai.it` and writes one JSON fil
 
 ## What to look for
 
-The five things static analysis couldn't answer:
+What's still unanswered, in priority order:
 
-- **`x-ibm-client-id` / `x-ibm-client-secret` / `x-unipol-tenant`** on any request. These are the credentials the integration needs and they're not in the APK.
+- **`lastPosition`** response, for the true `date` format, `accuracy` units, and the `dailyFruitions.max` value on your account. `extract-flows.sh` prints these four fields automatically as soon as it sees one.
+- **A forced refresh**, to see the `pendingRequest: true` → `false` cycle and how long it takes. This and `max` together decide the polling design, so they matter more than everything else here.
 - **`POST /hub/login`** response, to confirm the `{"JWT": {...}}` shape and the real `expires_in`.
-- **`lastPosition`** response, for the true `date` format, `accuracy` units, and the `dailyFruitions.max` value on your account.
-- **A forced refresh**, to see the `pendingRequest: true` → `false` cycle and how long it takes.
-- **Whether login triggers an OTP** on a device it hasn't seen before.
+- **Whether login triggers an OTP** on a device it hasn't seen before. There's a lot of OTP machinery in `LoginApi` and none of it has been exercised.
+- **`myTelematicContracts`**, to see how vehicles are described and whether the plate is the only usable key.
 
 ## Reading the values off the device instead
 
