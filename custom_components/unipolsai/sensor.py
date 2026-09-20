@@ -1,10 +1,10 @@
-"""Sensors for the UnipolSai Unibox."""
+"""Sensors."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -21,232 +21,227 @@ from homeassistant.const import (
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import UnipolSaiConfigEntry
-from .const import ALERT_SERVICES
-from .entity import UnipolSaiEntity, UnipolSaiUsageEntity
+from pyunipolsai import ALERT_SERVICES, SERVICE_CAR_FINDER, UsageStats
 
-
-def _epoch_ms(value: Any) -> datetime | None:
-    """The API sends epoch milliseconds, despite declaring the field String."""
-    if not isinstance(value, (int, float)):
-        return None
-    return datetime.fromtimestamp(value / 1000, tz=UTC)
+from . import UnipolSaiUniboxConfigEntry
+from .coordinator import (
+    UnipolSaiUniboxCoordinator,
+    UnipolSaiUniboxUsageCoordinator,
+    VehicleData,
+)
+from .entity import UnipolSaiUniboxEntity, UnipolSaiUniboxUsageEntity
 
 
 @dataclass(frozen=True, kw_only=True)
-class PositionSensorDescription(SensorEntityDescription):
-    """A sensor reading from the position/VAS payload."""
+class UnipolSaiUniboxSensorDescription(SensorEntityDescription):
+    """A sensor reading from the position and service poll."""
 
-    value_fn: Callable[[dict, dict], Any]
+    value_fn: Callable[[VehicleData], Any]
 
 
-POSITION_SENSORS: tuple[PositionSensorDescription, ...] = (
-    PositionSensorDescription(
+SENSORS: tuple[UnipolSaiUniboxSensorDescription, ...] = (
+    UnipolSaiUniboxSensorDescription(
         key="speed",
         translation_key="speed",
         device_class=SensorDeviceClass.SPEED,
         native_unit_of_measurement=UnitOfSpeed.KILOMETERS_PER_HOUR,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda pos, vas: pos.get("speed"),
+        value_fn=lambda data: data.position.speed,
     ),
-    PositionSensorDescription(
+    UnipolSaiUniboxSensorDescription(
         key="heading",
         translation_key="heading",
         icon="mdi:compass",
-        # A cardinal letter, not degrees, so this stays a plain text sensor.
-        value_fn=lambda pos, vas: pos.get("heading"),
+        # The API returns a cardinal letter, not a bearing, so this stays a
+        # text sensor. The degrees are on the tracker as an attribute.
+        value_fn=lambda data: data.position.heading,
     ),
-    PositionSensorDescription(
+    UnipolSaiUniboxSensorDescription(
         key="last_fix",
         translation_key="last_fix",
         device_class=SensorDeviceClass.TIMESTAMP,
-        value_fn=lambda pos, vas: _epoch_ms(pos.get("date")),
+        value_fn=lambda data: data.position.timestamp,
     ),
-    PositionSensorDescription(
+    UnipolSaiUniboxSensorDescription(
         key="refreshes_used",
         translation_key="refreshes_used",
         icon="mdi:counter",
         entity_category=EntityCategory.DIAGNOSTIC,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda pos, vas: (pos.get("dailyFruitions") or {}).get("current"),
+        value_fn=lambda data: data.position.quota.used,
     ),
-    PositionSensorDescription(
+    UnipolSaiUniboxSensorDescription(
         key="refreshes_remaining",
         translation_key="refreshes_remaining",
         icon="mdi:counter",
         entity_category=EntityCategory.DIAGNOSTIC,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda pos, vas: (
-            None
-            if not (q := pos.get("dailyFruitions"))
-            or q.get("max") is None
-            or q.get("current") is None
-            else max(0, q["max"] - q["current"])
-        ),
+        value_fn=lambda data: data.position.quota.remaining,
     ),
-    PositionSensorDescription(
+    UnipolSaiUniboxSensorDescription(
         key="car_finder_credits",
         translation_key="car_finder_credits",
         icon="mdi:ticket-confirmation",
         entity_category=EntityCategory.DIAGNOSTIC,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda pos, vas: (vas.get("carFinder") or {}).get(
-            "serviceAvailableCredits"
+        value_fn=lambda data: (
+            service.credits_available
+            if (service := data.services.get(SERVICE_CAR_FINDER))
+            else None
         ),
     ),
 )
 
 
 @dataclass(frozen=True, kw_only=True)
-class UsageSensorDescription(SensorEntityDescription):
-    """A sensor reading from the vehicleUsages payload."""
+class UnipolSaiUniboxUsageDescription(SensorEntityDescription):
+    """A sensor reading from the driving statistics."""
 
-    value_fn: Callable[[dict], Any]
-
-
-def _km(field: str) -> Callable[[dict], Any]:
-    """vehicleUsages distances are METRES. Off by 1000x if you assume km."""
-    return lambda d: None if d.get(field) is None else round(d[field] / 1000, 1)
+    value_fn: Callable[[UsageStats], Any]
 
 
-def _hours(field: str) -> Callable[[dict], Any]:
-    """vehicleUsages times are SECONDS."""
-    return lambda d: None if d.get(field) is None else round(d[field] / 3600, 2)
-
-
-def _distance(key: str, field: str) -> UsageSensorDescription:
-    return UsageSensorDescription(
+def _distance(key: str, kind: str) -> UnipolSaiUniboxUsageDescription:
+    return UnipolSaiUniboxUsageDescription(
         key=key,
         translation_key=key,
         device_class=SensorDeviceClass.DISTANCE,
         native_unit_of_measurement=UnitOfLength.KILOMETERS,
-        # Cumulative since the contract started, and it can be restated,
+        # Cumulative since the contract started, and the API can restate it,
         # so TOTAL rather than TOTAL_INCREASING.
         state_class=SensorStateClass.TOTAL,
-        value_fn=_km(field),
+        value_fn=lambda usage: usage.distance_km(kind),
     )
 
 
-USAGE_SENSORS: tuple[UsageSensorDescription, ...] = (
-    _distance("total_distance", "totalDistance"),
-    _distance("city_distance", "cityDrivingDistance"),
-    _distance("extra_urban_distance", "extraUrbanDrivingDistance"),
-    _distance("highway_distance", "highwayDrivingDistance"),
-    UsageSensorDescription(
+USAGE_SENSORS: tuple[UnipolSaiUniboxUsageDescription, ...] = (
+    _distance("total_distance", "total"),
+    _distance("city_distance", "city"),
+    _distance("extra_urban_distance", "extraUrban"),
+    _distance("highway_distance", "highway"),
+    UnipolSaiUniboxUsageDescription(
         key="total_driving_time",
         translation_key="total_driving_time",
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement=UnitOfTime.HOURS,
         state_class=SensorStateClass.TOTAL,
-        value_fn=_hours("totalDrivingTime"),
+        value_fn=lambda usage: usage.time_h("total"),
     ),
-    UsageSensorDescription(
+    UnipolSaiUniboxUsageDescription(
         key="top_province",
         translation_key="top_province",
         icon="mdi:map-marker-radius",
-        value_fn=lambda d: d.get("higherMileageProvinceFullName"),
+        value_fn=lambda usage: usage.top_province,
     ),
-    UsageSensorDescription(
+    UnipolSaiUniboxUsageDescription(
         key="top_province_share",
         translation_key="top_province_share",
         icon="mdi:chart-pie",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda d: d.get("higherMileageProvinceDrivingPerc"),
+        value_fn=lambda usage: usage.top_province_share,
     ),
 )
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: UnipolSaiConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    entry: UnipolSaiUniboxConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up sensors."""
     data = entry.runtime_data
     entities: list[SensorEntity] = []
 
-    for plate, coordinator in data.coordinators.items():
+    for plate, coordinator in data.vehicles.items():
         entities.extend(
-            UnipolSaiPositionSensor(coordinator, description)
-            for description in POSITION_SENSORS
+            UnipolSaiUniboxSensor(coordinator, description) for description in SENSORS
         )
-        vas = (coordinator.data or {}).get("vas") or {}
         entities.extend(
-            UnipolSaiLastAlertSensor(coordinator, service, event_type)
+            UnipolSaiUniboxLastAlertSensor(coordinator, service, event_type)
             for service, event_type in ALERT_SERVICES.items()
-            if (vas.get(service) or {}).get("isServiceActivated")
+            if coordinator.data.service_active(service)
         )
         if usage := data.usage.get(plate):
             entities.extend(
-                UnipolSaiUsageSensor(usage, description, coordinator.vehicle)
+                UnipolSaiUniboxUsageSensor(usage, description)
                 for description in USAGE_SENSORS
             )
 
     async_add_entities(entities)
 
 
-class UnipolSaiPositionSensor(UnipolSaiEntity, SensorEntity):
-    """A sensor derived from lastPosition or vehicleVAS."""
+class UnipolSaiUniboxSensor(UnipolSaiUniboxEntity, SensorEntity):
+    """A reading from the position and service poll."""
 
-    entity_description: PositionSensorDescription
+    entity_description: UnipolSaiUniboxSensorDescription
 
-    def __init__(self, coordinator, description: PositionSensorDescription) -> None:
+    def __init__(
+        self,
+        coordinator: UnipolSaiUniboxCoordinator,
+        description: UnipolSaiUniboxSensorDescription,
+    ) -> None:
+        """Set up the sensor."""
         super().__init__(coordinator, description.key)
         self.entity_description = description
 
     @property
     def native_value(self) -> Any:
-        return self.entity_description.value_fn(self.position, self.vas)
+        """Current value."""
+        return self.entity_description.value_fn(self.coordinator.data)
 
 
-class UnipolSaiUsageSensor(UnipolSaiUsageEntity, SensorEntity):
-    """A sensor derived from vehicleUsages."""
+class UnipolSaiUniboxUsageSensor(UnipolSaiUniboxUsageEntity, SensorEntity):
+    """A reading from the driving statistics."""
 
-    entity_description: UsageSensorDescription
+    entity_description: UnipolSaiUniboxUsageDescription
 
     def __init__(
-        self, coordinator, description: UsageSensorDescription, contract: dict
+        self,
+        coordinator: UnipolSaiUniboxUsageCoordinator,
+        description: UnipolSaiUniboxUsageDescription,
     ) -> None:
-        super().__init__(coordinator, description.key, contract)
+        """Set up the sensor."""
+        super().__init__(coordinator, description.key)
         self.entity_description = description
 
     @property
     def native_value(self) -> Any:
-        return self.entity_description.value_fn(self.coordinator.data or {})
+        """Current value."""
+        return self.entity_description.value_fn(self.coordinator.data)
 
 
-class UnipolSaiLastAlertSensor(UnipolSaiEntity, SensorEntity):
+class UnipolSaiUniboxLastAlertSensor(UnipolSaiUniboxEntity, SensorEntity):
     """When the most recent event for one alert service happened."""
 
     _attr_device_class = SensorDeviceClass.TIMESTAMP
 
-    def __init__(self, coordinator, service: str, event_type: str) -> None:
+    def __init__(
+        self,
+        coordinator: UnipolSaiUniboxCoordinator,
+        service: str,
+        event_type: str,
+    ) -> None:
+        """Set up the sensor."""
         super().__init__(coordinator, f"last_{service}")
         self._service = service
         self._attr_translation_key = f"last_{event_type}"
 
     @property
     def native_value(self) -> datetime | None:
-        notifications = (
-            (self.coordinator.data or {}).get("notifications") or {}
-        ).get(self._service) or []
-        if not notifications:
-            return None
-        return _epoch_ms(notifications[0].get("eventDate"))
+        """Timestamp of the latest event."""
+        latest = self.coordinator.data.latest(self._service)
+        return latest.occurred_at if latest else None
 
     @property
     def extra_state_attributes(self) -> dict:
-        notifications = (
-            (self.coordinator.data or {}).get("notifications") or {}
-        ).get(self._service) or []
-        if not notifications:
+        """Where the event happened, which is not the current position."""
+        latest = self.coordinator.data.latest(self._service)
+        if latest is None:
             return {}
-        latest = notifications[0]
         return {
-            "latitude": latest.get("latitude"),
-            "longitude": latest.get("longitude"),
-            "speed": latest.get("speed"),
+            "latitude": latest.latitude,
+            "longitude": latest.longitude,
+            "speed": latest.speed,
         }

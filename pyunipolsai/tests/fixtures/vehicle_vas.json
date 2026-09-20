@@ -1,0 +1,8 @@
+{"operationResult": {"type": 0},
+ "vehicleVAS": [
+  {"serviceName": "carFinder", "isServiceEnabled": true, "isServiceActivated": true,
+   "serviceRequiredCredits": true, "serviceAvailableCredits": 9,
+   "serviceCreditUsed": 1, "rechargeOwnership": "Unipol"},
+  {"serviceName": "rangeStatistics", "isServiceEnabled": true,
+   "isServiceActivated": true, "serviceRequiredCredits": false,
+   "rechargeOwnership": "Unipol"}]}

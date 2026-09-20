@@ -1,0 +1,13 @@
+{"auto": {"contrattiAuto": [
+  {"identificativoTelematico": "27778190", "statoContratto": "open",
+   "statoTerminale": "active",
+   "veicolo": {"tipo": 1, "marca": "VOLKSWAGEN", "modello": "T-ROC", "targa": "AB123CD"},
+   "dispositivoTelematico": {"idDispositivo": "999", "tipoDispositivo": "F",
+                             "imei": "000000000000000"}},
+  {"identificativoTelematico": "111", "statoContratto": "open",
+   "statoTerminale": "inactive",
+   "veicolo": {"marca": "FIAT", "modello": "PANDA", "targa": "ZZ999ZZ"},
+   "dispositivoTelematico": {}}],
+  "codice": 200200},
+ "immobili": {"contrattiImmobili": [], "codice": 404404, "message": "Contratti non trovati"},
+ "pet": {"contrattiPet": [], "codice": 404, "message": "Contratti non trovati"}}

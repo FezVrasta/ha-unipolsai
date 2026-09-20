@@ -7,7 +7,7 @@
         "data": {
           "username": "Username",
           "password": "Password",
-          "ibm_client_id": "API client id",
+          "ibm_client_id": "API client ID",
           "ibm_client_secret": "API client secret",
           "tenant": "Tenant"
         }
@@ -16,6 +16,14 @@
         "title": "Sign in again",
         "description": "The Unipol session for {username} expired and could not be renewed.",
         "data": {
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "title": "Change account",
+        "description": "Use a different Unipol account for this entry.",
+        "data": {
+          "username": "Username",
           "password": "Password"
         }
       }
@@ -28,7 +36,28 @@
     },
     "abort": {
       "already_configured": "This account is already set up.",
-      "reauth_successful": "Signed in again."
+      "reauth_successful": "Signed in again.",
+      "reconfigure_successful": "Account updated.",
+      "wrong_account": "That is a different Unipol account. Add it as a new entry instead."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "API gateway credentials",
+        "description": "These ship with the integration and only need changing if Unipol rotates them.",
+        "data": {
+          "ibm_client_id": "API client ID",
+          "ibm_client_secret": "API client secret",
+          "tenant": "Tenant"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the Unipol API with those values.",
+      "invalid_auth": "The saved account credentials were rejected.",
+      "no_vehicles": "No vehicle with an active Unibox was found.",
+      "unknown": "Unexpected error."
     }
   },
   "entity": {
@@ -139,25 +168,6 @@
           }
         }
       }
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "API gateway credentials",
-        "description": "These ship with the integration and only need changing if Unipol rotates them. See the integration docs for how to capture new ones.",
-        "data": {
-          "ibm_client_id": "API client id",
-          "ibm_client_secret": "API client secret",
-          "tenant": "Tenant"
-        }
-      }
-    },
-    "error": {
-      "cannot_connect": "Could not reach the Unipol API with those values.",
-      "invalid_auth": "The saved account credentials were rejected.",
-      "no_vehicles": "No vehicle with an active Unibox was found.",
-      "unknown": "Unexpected error."
     }
   }
 }

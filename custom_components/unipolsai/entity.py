@@ -1,65 +1,64 @@
-"""Shared entity base for the UnipolSai Unibox integration."""
+"""Shared entity bases."""
 
 from __future__ import annotations
 
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from pyunipolsai import SERVICE_CAR_FINDER, Vehicle
+
 from .const import DOMAIN
-from .coordinator import UnipolSaiCoordinator, UnipolSaiUsageCoordinator
+from .coordinator import UnipolSaiUniboxCoordinator, UnipolSaiUniboxUsageCoordinator
 
 
-def build_device_info(plate: str, contract: dict) -> DeviceInfo:
-    """One HA device per vehicle."""
-    vehicle = contract.get("veicolo") or {}
-    device = contract.get("dispositivoTelematico") or {}
-    make = vehicle.get("marca") or ""
-    model = vehicle.get("modello") or ""
+def device_identity(vehicle: Vehicle) -> str:
+    """Return the stable identifier for one vehicle's box.
+
+    The box's own id, not the plate: a plate can be reassigned and the box can
+    be moved to another car, and either would orphan every entity's history if
+    it were part of the unique ID.
+    """
+    return vehicle.device.device_id or vehicle.plate
+
+
+def build_device_info(vehicle: Vehicle) -> DeviceInfo:
+    """One Home Assistant device per vehicle."""
+    make = (vehicle.make or "").title()
     return DeviceInfo(
-        identifiers={(DOMAIN, plate)},
-        name=f"{make.title()} {plate}".strip(),
-        manufacturer=make.title() or "UnipolSai",
-        model=model.title() or "Unibox",
-        serial_number=device.get("idDispositivo"),
+        identifiers={(DOMAIN, device_identity(vehicle))},
+        name=f"{make} {vehicle.plate}".strip(),
+        manufacturer=make or "UnipolSai",
+        model=(vehicle.model or "Unibox").title(),
+        serial_number=vehicle.device.device_id,
     )
 
 
-class UnipolSaiEntity(CoordinatorEntity[UnipolSaiCoordinator]):
-    """Base for entities backed by the position/VAS coordinator."""
+class UnipolSaiUniboxEntity(CoordinatorEntity[UnipolSaiUniboxCoordinator]):
+    """Base for entities backed by the position and service poll."""
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: UnipolSaiCoordinator, key: str) -> None:
+    def __init__(self, coordinator: UnipolSaiUniboxCoordinator, key: str) -> None:
+        """Bind to the coordinator and take a permanent ID from the box."""
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.plate}_{key}"
-        self._attr_device_info = build_device_info(
-            coordinator.plate, coordinator.vehicle
-        )
-
-    @property
-    def position(self) -> dict:
-        return (self.coordinator.data or {}).get("position") or {}
-
-    @property
-    def vas(self) -> dict:
-        return (self.coordinator.data or {}).get("vas") or {}
+        self._attr_unique_id = f"{device_identity(coordinator.vehicle)}_{key}"
+        self._attr_device_info = build_device_info(coordinator.vehicle)
 
     @property
     def car_finder_active(self) -> bool:
-        return bool((self.vas.get("carFinder") or {}).get("isServiceActivated"))
+        """Whether the position service is switched on for this contract."""
+        return bool(self.coordinator.data) and self.coordinator.data.service_active(
+            SERVICE_CAR_FINDER
+        )
 
 
-class UnipolSaiUsageEntity(CoordinatorEntity[UnipolSaiUsageCoordinator]):
-    """Base for entities backed by the driving-statistics coordinator."""
+class UnipolSaiUniboxUsageEntity(CoordinatorEntity[UnipolSaiUniboxUsageCoordinator]):
+    """Base for entities backed by the driving-statistics poll."""
 
     _attr_has_entity_name = True
 
-    def __init__(
-        self,
-        coordinator: UnipolSaiUsageCoordinator,
-        key: str,
-        contract: dict,
-    ) -> None:
+    def __init__(self, coordinator: UnipolSaiUniboxUsageCoordinator, key: str) -> None:
+        """Bind to the statistics coordinator."""
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.plate}_{key}"
-        self._attr_device_info = build_device_info(coordinator.plate, contract)
+        self._attr_unique_id = f"{device_identity(coordinator.vehicle)}_{key}"
+        self._attr_device_info = build_device_info(coordinator.vehicle)

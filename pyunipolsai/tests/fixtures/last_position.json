@@ -1,0 +1,5 @@
+{"operationResult": {"type": 0},
+ "lastPosition": {"date": 1789889311000, "lat": 45.4642, "lon": 9.19,
+   "speed": 0, "heading": "N", "timeZone": 0, "daylightSavingTime": 0,
+   "accuracy": 1, "pendingRequest": false,
+   "dailyFruitions": {"current": 0, "max": 5}}}

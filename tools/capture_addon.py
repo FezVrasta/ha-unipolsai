@@ -6,19 +6,33 @@ interpreter, so it needs no packages installed on the system python.
 Writes to captures/flows.jsonl and prints the APIC credentials as soon as they
 appear, since those are the main thing a capture session is for.
 """
+
 import json
-import os
 import pathlib
 import re
 
 KEEP = "apphub.unipolsai.it"
-DROP = ("tiqcdn", "tealium", "firebase", "crashlytics", "googleapis",
-        "glassbox", "clarisite", "igodigital", "app-measurement")
+DROP = (
+    "tiqcdn",
+    "tealium",
+    "firebase",
+    "crashlytics",
+    "googleapis",
+    "glassbox",
+    "clarisite",
+    "igodigital",
+    "app-measurement",
+)
 
 HEADERS_OF_INTEREST = (
-    "authorization", "x-ibm-client-id", "x-ibm-client-secret",
-    "x-unipol-tenant", "x-unipol-canale", "x-unipol-requestid",
-    "source", "user-agent",
+    "authorization",
+    "x-ibm-client-id",
+    "x-ibm-client-secret",
+    "x-unipol-tenant",
+    "x-unipol-canale",
+    "x-unipol-requestid",
+    "source",
+    "user-agent",
 )
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -28,12 +42,13 @@ _seen_creds = {}
 
 
 def _jsonify(raw):
+    """Decode a body as JSON, falling back to text."""
     try:
         return json.loads(raw)
-    except Exception:
+    except (ValueError, TypeError, UnicodeDecodeError):
         try:
             return raw.decode("utf-8", "replace")
-        except Exception:
+        except (AttributeError, UnicodeDecodeError):
             return None
 
 
@@ -46,8 +61,7 @@ def _redact(value):
     """
     if isinstance(value, str):
         # form-encoded login body
-        value = re.sub(r"(password=)[^&]*", r"\1<redacted>", value, flags=re.I)
-        return value
+        return re.sub(r"(password=)[^&]*", r"\1<redacted>", value, flags=re.IGNORECASE)
     if isinstance(value, dict):
         out = {}
         for k, v in value.items():
@@ -65,6 +79,7 @@ def _redact(value):
 
 
 def response(flow):
+    """Record one Unipol request/response pair."""
     host = flow.request.pretty_host
     if KEEP not in host or any(d in host for d in DROP):
         return
@@ -81,17 +96,24 @@ def response(flow):
         "path": flow.request.path.split("?")[0],
         "status": flow.response.status_code,
         "request_headers": {
-            k.lower(): (f"Bearer <jwt {len(v) - 7} chars>" if k.lower() == "authorization"
-                        and v.startswith("Bearer ") else v)
+            k.lower(): (
+                f"Bearer <jwt {len(v) - 7} chars>"
+                if k.lower() == "authorization" and v.startswith("Bearer ")
+                else v
+            )
             for k, v in flow.request.headers.items()
             if k.lower() in HEADERS_OF_INTEREST
         },
-        "request_body": _redact(_jsonify(flow.request.content)) if flow.request.content else None,
-        "response": _redact(_jsonify(flow.response.content)) if flow.response.content else None,
+        "request_body": _redact(_jsonify(flow.request.content))
+        if flow.request.content
+        else None,
+        "response": _redact(_jsonify(flow.response.content))
+        if flow.response.content
+        else None,
     }
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUT, "a") as fh:
+    with OUT.open("a") as fh:
         fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     if "telematici" in entry["path"] or entry["path"].endswith("/login"):

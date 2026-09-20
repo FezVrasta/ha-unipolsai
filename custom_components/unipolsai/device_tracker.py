@@ -1,68 +1,72 @@
-"""Device tracker for the UnipolSai Unibox."""
+"""Vehicle location."""
 
 from __future__ import annotations
 
 from homeassistant.components.device_tracker import SourceType, TrackerEntity
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import UnipolSaiConfigEntry
-from .const import HEADING_DEGREES
-from .entity import UnipolSaiEntity
+from . import UnipolSaiUniboxConfigEntry
+from .coordinator import UnipolSaiUniboxCoordinator
+from .entity import UnipolSaiUniboxEntity
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: UnipolSaiConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    entry: UnipolSaiUniboxConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up one tracker per vehicle."""
     async_add_entities(
-        UnipolSaiTracker(coordinator)
-        for coordinator in entry.runtime_data.coordinators.values()
+        UnipolSaiUniboxTracker(coordinator)
+        for coordinator in entry.runtime_data.vehicles.values()
     )
 
 
-class UnipolSaiTracker(UnipolSaiEntity, TrackerEntity):
-    """The vehicle's last known position."""
+class UnipolSaiUniboxTracker(UnipolSaiUniboxEntity, TrackerEntity):
+    """Where the box last reported the vehicle."""
 
     _attr_name = None
     _attr_icon = "mdi:car"
 
-    def __init__(self, coordinator) -> None:
+    def __init__(self, coordinator: UnipolSaiUniboxCoordinator) -> None:
+        """Set up the tracker."""
         super().__init__(coordinator, "tracker")
 
     @property
     def source_type(self) -> SourceType:
+        """Report GPS, which is what the box uses."""
         return SourceType.GPS
 
     @property
     def latitude(self) -> float | None:
-        return self.position.get("lat")
+        """Latitude of the last reported position."""
+        return self.coordinator.data.position.latitude
 
     @property
     def longitude(self) -> float | None:
-        return self.position.get("lon")
+        """Longitude of the last reported position."""
+        return self.coordinator.data.position.longitude
 
-    # No location_accuracy on purpose. The API's `accuracy` is a small integer
-    # grade, not a radius in metres, and reporting it would tell HA the fix is
-    # good to 1 metre. See docs/FINDINGS.md.
+    # `location_accuracy` is deliberately left at its default. The API's
+    # `accuracy` is a small quality grade, not a radius in metres, so
+    # reporting it would tell Home Assistant the fix is good to one metre and
+    # make every zone check wrong.
 
     @property
     def available(self) -> bool:
+        """Unavailable when the position service is switched off."""
         return super().available and self.car_finder_active
 
     @property
     def extra_state_attributes(self) -> dict:
-        position = self.position
-        heading = position.get("heading")
-        quota = position.get("dailyFruitions") or {}
+        """Expose the readings that have no entity of their own."""
+        position = self.coordinator.data.position
         return {
-            "speed": position.get("speed"),
-            "heading": heading,
-            "heading_degrees": HEADING_DEGREES.get(heading),
-            "quality": position.get("accuracy"),
-            "refresh_pending": position.get("pendingRequest"),
-            "refreshes_used_today": quota.get("current"),
-            "refreshes_per_day": quota.get("max"),
+            "heading": position.heading,
+            "heading_degrees": position.heading_degrees,
+            "quality": position.quality,
+            "refresh_pending": position.pending_request,
+            "refreshes_used_today": position.quota.used,
+            "refreshes_per_day": position.quota.limit,
         }

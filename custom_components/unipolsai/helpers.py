@@ -1,32 +1,29 @@
-"""Small helpers shared by setup and the config flow."""
+"""Helpers shared by setup and the config flow."""
 
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
 
-from .const import (
-    CONF_CLIENT_ID,
-    CONF_CLIENT_SECRET,
-    CONF_TENANT,
-    DEFAULT_CLIENT_ID,
-    DEFAULT_CLIENT_SECRET,
-    DEFAULT_TENANT,
-)
+from pyunipolsai import DEFAULT_CLIENT_ID, DEFAULT_CLIENT_SECRET, DEFAULT_TENANT
+
+from .const import CONF_CLIENT_ID, CONF_CLIENT_SECRET, CONF_TENANT
 
 
-def gateway_credentials(entry: ConfigEntry) -> tuple[str, str, str]:
-    """Resolve the gateway credentials: options, then data, then defaults.
+def gateway_credentials(entry: ConfigEntry) -> dict[str, str]:
+    """Resolve the API gateway credentials.
 
-    Options win so a user can paste new values if Unipol rotates them, without
-    waiting for a release. `data` is checked for entries created before the
-    defaults existed, when the flow asked for all three up front.
+    Options win over data so a rotation on Unipol's side can be fixed from the
+    UI without waiting for a release; `data` is only consulted for entries
+    created by the original flow, which asked for all three up front.
     """
-    return (
-        entry.options.get(CONF_CLIENT_ID)
+    return {
+        "client_id": entry.options.get(CONF_CLIENT_ID)
         or entry.data.get(CONF_CLIENT_ID)
         or DEFAULT_CLIENT_ID,
-        entry.options.get(CONF_CLIENT_SECRET)
+        "client_secret": entry.options.get(CONF_CLIENT_SECRET)
         or entry.data.get(CONF_CLIENT_SECRET)
         or DEFAULT_CLIENT_SECRET,
-        entry.options.get(CONF_TENANT) or entry.data.get(CONF_TENANT) or DEFAULT_TENANT,
-    )
+        "tenant": entry.options.get(CONF_TENANT)
+        or entry.data.get(CONF_TENANT)
+        or DEFAULT_TENANT,
+    }

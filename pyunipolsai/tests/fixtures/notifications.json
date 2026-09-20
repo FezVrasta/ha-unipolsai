@@ -1,0 +1,7 @@
+{"operationResult": {"type": 0},
+ "serviceNotifications": [
+  {"id": "68b1e071-0000-0000-0000-000000000000", "voucherId": "27778190",
+   "eventDate": 1789885957000, "userCode": "XXXXXX00X00X000X",
+   "vehiclePlate": "IT-AB123CD", "tspName": "Alfa", "accuracy": 1,
+   "latitude": 45.48, "longitude": 9.2, "speed": 0, "speedLimitValue": 0,
+   "targetAreaLatitude": 0.0, "targetAreaLongitude": 0.0, "targetAreaRadius": 0}]}

@@ -1,0 +1,7 @@
+{"operationResult": {"type": 0},
+ "vehicleUsages": [{"statisticsDate": 1789689600000, "fromDate": 1781913600000,
+  "toDate": 1789689600000, "totalDistance": 5431730, "totalDrivingTime": 420215,
+  "cityDrivingDistance": 1378360, "highwayDrivingDistance": 1888260,
+  "cityDrivingTime": 149951, "mondayDrivingDistance": 749450,
+  "higherMileageProvince": "XX", "higherMileageProvinceFullName": "Province",
+  "higherMileageProvinceDrivingPerc": 41.58, "totalDaysUsedForAnalysis": 91}]}

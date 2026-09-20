@@ -429,7 +429,7 @@ Settled by the live session:
 Still open:
 
 1. What a **successful** forced refresh costs, and how long it takes. Only a failed one (engine off) has been measured. Needs a retry while the car is actually running.
-2. Whether the gateway rejects a non-app `User-Agent`. The verified call impersonated the app. `tools/probe.py` sends an honest one by default, so this needs one comparison run.
+2. Whether the gateway rejects a non-app `User-Agent`. The verified calls all impersonated the app. `pyunipolsai` does the same by default; pass `user_agent=` to the client to test an honest one.
 4. Whether `heading` uses 8-point (`"NE"`) or 16-point (`"NNE"`) cardinals. Only `"N"` observed.
 5. How long the F5 session lasts, and whether `login/refresh` renews the cookies or only the JWT. This decides how often the integration must fully re-login.
 7. Rate limits on the non-telematics endpoints.

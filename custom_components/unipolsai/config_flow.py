@@ -1,4 +1,4 @@
-"""Config flow for the UnipolSai Unibox integration."""
+"""Config flow."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.selector import (
     TextSelector,
@@ -22,73 +22,74 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
-from .api import UnipolSaiApi, UnipolSaiAuthError, UnipolSaiError
-from .const import (
-    CONF_CLIENT_ID,
-    CONF_CLIENT_SECRET,
-    CONF_TENANT,
+from pyunipolsai import (
     DEFAULT_CLIENT_ID,
     DEFAULT_CLIENT_SECRET,
     DEFAULT_TENANT,
-    DOMAIN,
+    UnipolSaiAuthError,
+    UnipolSaiClient,
+    UnipolSaiError,
 )
+
+from .const import CONF_CLIENT_ID, CONF_CLIENT_SECRET, CONF_TENANT, DOMAIN
 from .helpers import gateway_credentials
 
 _LOGGER = logging.getLogger(__name__)
 
-_PASSWORD_FIELD = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+PASSWORD_FIELD = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 
 
-def _gateway_schema(client_id: str, secret: str, tenant: str) -> dict:
+def _gateway_schema(
+    client_id: str, client_secret: str, tenant: str
+) -> dict[vol.Marker, Any]:
     return {
         vol.Required(CONF_CLIENT_ID, default=client_id): str,
-        vol.Required(CONF_CLIENT_SECRET, default=secret): _PASSWORD_FIELD,
-        vol.Required(CONF_TENANT, default=tenant): _PASSWORD_FIELD,
+        vol.Required(CONF_CLIENT_SECRET, default=client_secret): PASSWORD_FIELD,
+        vol.Required(CONF_TENANT, default=tenant): PASSWORD_FIELD,
     }
 
 
 async def _validate(
-    hass, username: str, password: str, client_id: str, secret: str, tenant: str
+    hass: HomeAssistant, username: str, password: str, **gateway: str
 ) -> tuple[str | None, int]:
-    """Return (error_key, vehicle_count)."""
-    session = async_create_clientsession(hass)
-    api = UnipolSaiApi(session, username, password, client_id, secret, tenant)
+    """Try the credentials. Returns an error key and the vehicle count."""
+    client = UnipolSaiClient(
+        username, password, session=async_create_clientsession(hass), **gateway
+    )
     try:
-        await api.login()
-        contracts = await api.telematic_contracts()
+        vehicles = await client.async_get_vehicles()
     except UnipolSaiAuthError:
         return "invalid_auth", 0
     except UnipolSaiError as err:
         _LOGGER.debug("Validation failed: %s", err)
         return "cannot_connect", 0
-    except Exception:  # noqa: BLE001
-        _LOGGER.exception("Unexpected error validating UnipolSai credentials")
+    except Exception:
+        _LOGGER.exception("Unexpected error validating credentials")
         return "unknown", 0
 
-    active = [c for c in contracts if c.get("statoTerminale") == "active"]
-    if not active:
+    if not vehicles:
         return "no_vehicles", 0
-    return None, len(active)
+    return None, len(vehicles)
 
 
-class UnipolSaiConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle the config flow."""
+class UnipolSaiUniboxConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Handle a config flow."""
 
     VERSION = 1
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Collect credentials.
+        """Collect the account credentials.
 
-        Only username and password by default. The gateway credentials ship as
-        defaults and are surfaced here only in HA's advanced mode; otherwise
-        they live in the options flow.
+        Only username and password by default. The gateway credentials ship
+        with the library and appear here only in advanced mode; otherwise
+        they live in the options flow, for the day Unipol rotates them.
         """
         errors: dict[str, str] = {}
-        schema: dict = {
+        schema: dict[vol.Marker, Any] = {
             vol.Required(CONF_USERNAME): str,
-            vol.Required(CONF_PASSWORD): _PASSWORD_FIELD,
+            vol.Required(CONF_PASSWORD): PASSWORD_FIELD,
         }
         if self.show_advanced_options:
             schema |= _gateway_schema(
@@ -96,36 +97,45 @@ class UnipolSaiConfigFlow(ConfigFlow, domain=DOMAIN):
             )
 
         if user_input is not None:
+            # The account is the identity here: there is no device to key on
+            # until we have talked to it.
             await self.async_set_unique_id(user_input[CONF_USERNAME].lower())
             self._abort_if_unique_id_configured()
 
-            client_id = user_input.get(CONF_CLIENT_ID, DEFAULT_CLIENT_ID)
-            secret = user_input.get(CONF_CLIENT_SECRET, DEFAULT_CLIENT_SECRET)
-            tenant = user_input.get(CONF_TENANT, DEFAULT_TENANT)
-
+            gateway = {
+                "client_id": user_input.get(CONF_CLIENT_ID, DEFAULT_CLIENT_ID),
+                "client_secret": user_input.get(
+                    CONF_CLIENT_SECRET, DEFAULT_CLIENT_SECRET
+                ),
+                "tenant": user_input.get(CONF_TENANT, DEFAULT_TENANT),
+            }
             error, count = await _validate(
                 self.hass,
                 user_input[CONF_USERNAME],
                 user_input[CONF_PASSWORD],
-                client_id,
-                secret,
-                tenant,
+                **gateway,
             )
             if error:
                 errors["base"] = error
             else:
                 _LOGGER.debug("Found %s vehicle(s) with an active box", count)
-                options = {}
-                # Only persist overrides; defaults stay in code so a future
-                # release can correct them.
-                if client_id != DEFAULT_CLIENT_ID:
-                    options[CONF_CLIENT_ID] = client_id
-                if secret != DEFAULT_CLIENT_SECRET:
-                    options[CONF_CLIENT_SECRET] = secret
-                if tenant != DEFAULT_TENANT:
-                    options[CONF_TENANT] = tenant
+                # Only overrides are persisted, so a corrected default in a
+                # future release reaches existing installs.
+                options = {
+                    key: value
+                    for key, value, default in (
+                        (CONF_CLIENT_ID, gateway["client_id"], DEFAULT_CLIENT_ID),
+                        (
+                            CONF_CLIENT_SECRET,
+                            gateway["client_secret"],
+                            DEFAULT_CLIENT_SECRET,
+                        ),
+                        (CONF_TENANT, gateway["tenant"], DEFAULT_TENANT),
+                    )
+                    if value != default
+                }
                 return self.async_create_entry(
-                    title=f"UnipolSai ({user_input[CONF_USERNAME]})",
+                    title=user_input[CONF_USERNAME],
                     data={
                         CONF_USERNAME: user_input[CONF_USERNAME],
                         CONF_PASSWORD: user_input[CONF_PASSWORD],
@@ -140,7 +150,7 @@ class UnipolSaiConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_reauth(
         self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
-        """Handle re-authentication."""
+        """Start re-authentication."""
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
@@ -155,7 +165,7 @@ class UnipolSaiConfigFlow(ConfigFlow, domain=DOMAIN):
                 self.hass,
                 entry.data[CONF_USERNAME],
                 user_input[CONF_PASSWORD],
-                *gateway_credentials(entry),
+                **gateway_credentials(entry),
             )
             if error:
                 errors["base"] = error
@@ -166,19 +176,58 @@ class UnipolSaiConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reauth_confirm",
-            data_schema=vol.Schema({vol.Required(CONF_PASSWORD): _PASSWORD_FIELD}),
+            data_schema=vol.Schema({vol.Required(CONF_PASSWORD): PASSWORD_FIELD}),
             errors=errors,
             description_placeholders={"username": entry.data.get(CONF_USERNAME, "")},
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change the account this entry uses."""
+        errors: dict[str, str] = {}
+        entry = self._get_reconfigure_entry()
+
+        if user_input is not None:
+            await self.async_set_unique_id(user_input[CONF_USERNAME].lower())
+            # Pointing an entry at a different account would merge two
+            # vehicles' histories into one set of entities.
+            self._abort_if_unique_id_mismatch(reason="wrong_account")
+
+            error, _ = await _validate(
+                self.hass,
+                user_input[CONF_USERNAME],
+                user_input[CONF_PASSWORD],
+                **gateway_credentials(entry),
+            )
+            if error:
+                errors["base"] = error
+            else:
+                return self.async_update_reload_and_abort(
+                    entry, data_updates=user_input
+                )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_USERNAME, default=entry.data.get(CONF_USERNAME)
+                    ): str,
+                    vol.Required(CONF_PASSWORD): PASSWORD_FIELD,
+                }
+            ),
+            errors=errors,
         )
 
     @staticmethod
     @callback
     def async_get_options_flow(entry: ConfigEntry) -> OptionsFlow:
         """Expose the gateway credentials for override."""
-        return UnipolSaiOptionsFlow()
+        return UnipolSaiUniboxOptionsFlow()
 
 
-class UnipolSaiOptionsFlow(OptionsFlow):
+class UnipolSaiUniboxOptionsFlow(OptionsFlow):
     """Override the gateway credentials if Unipol rotates them."""
 
     async def async_step_init(
@@ -194,9 +243,9 @@ class UnipolSaiOptionsFlow(OptionsFlow):
                 self.hass,
                 entry.data[CONF_USERNAME],
                 entry.data[CONF_PASSWORD],
-                user_input[CONF_CLIENT_ID],
-                user_input[CONF_CLIENT_SECRET],
-                user_input[CONF_TENANT],
+                client_id=user_input[CONF_CLIENT_ID],
+                client_secret=user_input[CONF_CLIENT_SECRET],
+                tenant=user_input[CONF_TENANT],
             )
             if error:
                 errors["base"] = error
@@ -205,6 +254,10 @@ class UnipolSaiOptionsFlow(OptionsFlow):
 
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(_gateway_schema(*current)),
+            data_schema=vol.Schema(
+                _gateway_schema(
+                    current["client_id"], current["client_secret"], current["tenant"]
+                )
+            ),
             errors=errors,
         )
