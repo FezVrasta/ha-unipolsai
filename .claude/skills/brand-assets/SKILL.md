@@ -57,15 +57,28 @@ A self-contained tile — an app-icon-style squircle with its own background —
 correctly on light and dark themes alike, which is how to avoid shipping a `dark_`
 variant at all. A bare glyph needs one.
 
-**Use a squircle, not a rounded rectangle.** A superellipse with exponent around 5 eases
-its curvature into the straight edges; a rounded rectangle's circular arcs meet them at a
-tangent, and the corner reads as a visible join. `squircle()` in `tools/make_icon.py`
-emits the path:
+**Use a squircle, and get the squircle right.** A circular rounded rectangle is wrong
+for the reason you would guess: curvature jumps from 0 along the edge to 1/r at the arc,
+and the join is visible. But the usual fix is also wrong.
+
+A superellipse — `|x|^n + |y|^n = 1`, n around 5 — is what most people mean by
+"squircle", and it is *not* the shape iOS uses. It curves continuously everywhere, which
+means the edges that should be flat bow outward; against a real app icon it reads as
+pillowed. Apple's mask is a rounded rectangle with **continuous curvature**, as produced
+by `UIBezierPath(roundedRect:cornerRadius:)`: genuinely straight edges, with the corner
+easing curvature in over a longer run than an arc would. Figma exposes the same
+construction as "corner smoothing".
+
+Two numbers define it, and `squircle()` in `tools/make_icon.py` implements it:
 
 ```python
-x = math.copysign(abs(math.cos(t)) ** (2 / n), math.cos(t))
-y = math.copysign(abs(math.sin(t)) ** (2 / n), math.sin(t))
+CORNER_RADIUS_RATIO = 0.2237   # corner radius as a fraction of the width
+CORNER_SMOOTHING = 0.6         # Figma's corner-smoothing value
 ```
+
+The tell, if you are ever unsure which one you are looking at: put the shape on a light
+background and sight along an edge. A superellipse bows; the iOS shape is dead straight
+until the corner starts.
 
 Draw it full-bleed, inscribed in the whole artboard rather than inset, the way an app
 icon fills its mask.
